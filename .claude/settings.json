@@ -1,0 +1,56 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "defaultMode": "plan",
+    "additionalDirectories": ["docs", ".claude", "scripts", ".github"],
+    "allow": [
+      "Read(**)",
+      "Edit(/docs/**)",
+      "Edit(/.claude/**)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git grep:*)",
+      "Bash(find:*)",
+      "Bash(go test ./...:*)",
+      "Bash(go test -run:*)",
+      "Bash(pnpm test:*)",
+      "Bash(npm test:*)",
+      "Bash(yarn test:*)",
+      "Bash(bun test:*)",
+      "Bash(vitest:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(pytest:*)",
+      "Bash(mvn test:*)",
+      "Bash(gradle test:*)",
+      "Bash(flutter test:*)"
+    ],
+    "ask": [
+      "Edit(/src/**)",
+      "Edit(/internal/**)",
+      "Edit(/cmd/**)",
+      "Edit(/pkg/**)",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(wrangler deploy:*)",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "deny": [
+      "Edit(/**/.env)",
+      "Edit(/**/.git/**)",
+      "Edit(/**/package-lock.json)",
+      "Edit(/**/pnpm-lock.yaml)",
+      "Edit(/**/yarn.lock)",
+      "Edit(/**/node_modules/**)",
+      "Edit(/**/deploy/**)",
+      "Bash(git commit:*)",
+      "Bash(git tag:*)",
+      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push --tags:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ]
+  }
+}
