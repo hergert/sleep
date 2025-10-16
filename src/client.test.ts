@@ -1,22 +1,22 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { EightSleepClient } from './client.js';
+import { SleepClient } from './client.js';
 
-// Integration tests requiring real Eight Sleep credentials
+// Integration tests requiring real sleep credentials
 // Set EMAIL and PASSWORD env vars (or CLIENT_TEST_EMAIL/CLIENT_TEST_PASSWORD) to run tests
 
 const email = process.env.EMAIL || process.env.CLIENT_TEST_EMAIL;
 const password = process.env.PASSWORD || process.env.CLIENT_TEST_PASSWORD;
 const hasCredentials = email && password;
 
-describe('EightSleepClient', () => {
-  let client: EightSleepClient;
+describe('SleepClient', () => {
+  let client: SleepClient;
   let deviceId: string;
 
   beforeAll(async () => {
     if (!hasCredentials) {
       return;
     }
-    client = new EightSleepClient();
+    client = new SleepClient();
   });
 
   test.skipIf(!hasCredentials)('authenticate with real credentials', async () => {
@@ -27,7 +27,7 @@ describe('EightSleepClient', () => {
 
   test.skipIf(!hasCredentials)('getUserProfile returns valid data', async () => {
     if (!client) {
-      client = new EightSleepClient();
+      client = new SleepClient();
       await client.authenticate(email!, password!);
     }
 
@@ -46,7 +46,7 @@ describe('EightSleepClient', () => {
 
   test.skipIf(!hasCredentials)('getDeviceStatus returns heating levels', async () => {
     if (!client) {
-      client = new EightSleepClient();
+      client = new SleepClient();
       await client.authenticate(email!, password!);
       const profile = await client.getUserProfile();
       deviceId = profile.currentDevice.id;
@@ -63,7 +63,7 @@ describe('EightSleepClient', () => {
 
   test.skipIf(!hasCredentials)('setHeatingLevel updates temperature', async () => {
     if (!client) {
-      client = new EightSleepClient();
+      client = new SleepClient();
       await client.authenticate(email!, password!);
     }
 
@@ -77,7 +77,7 @@ describe('EightSleepClient', () => {
 
   test.skipIf(!hasCredentials)('getSleepTrends returns sleep data', async () => {
     if (!client) {
-      client = new EightSleepClient();
+      client = new SleepClient();
       await client.authenticate(email!, password!);
     }
 

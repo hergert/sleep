@@ -12,14 +12,14 @@ const APP_BASE_URL = 'https://app-api.8slp.net/v1';
 const CLIENT_ID = '0894c7f33bb94800a03f1f4df13a4f38';
 const CLIENT_SECRET = 'f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76';
 
-export class EightSleepClient {
+export class SleepClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private expiresAt: number = 0;
   private userId: string | null = null;
 
   /**
-   * Authenticate with Eight Sleep API using email and password.
+   * Authenticate with sleep API using email and password.
    * Stores access token, refresh token, and userId for subsequent requests.
    */
   async authenticate(email: string, password: string): Promise<void> {

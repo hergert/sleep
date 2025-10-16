@@ -68,7 +68,7 @@ async function inspectRequest(url: string, options: RequestInit = {}): Promise<a
 }
 
 /**
- * Authenticate with Eight Sleep
+ * Authenticate with sleep API
  */
 async function authenticate() {
   const email = process.env.EMAIL || process.env.CLIENT_TEST_EMAIL;
@@ -209,10 +209,10 @@ async function getTrendsThisWeek(tz: string = 'America/New_York') {
  */
 async function showMenu() {
   console.log('\n' + '='.repeat(80));
-  console.log('🛏️  Eight Sleep API Explorer');
+  console.log('🛏️  Sleep API Explorer');
   console.log('='.repeat(80));
   console.log('\nAvailable commands:');
-  console.log('  1. auth              - Authenticate with Eight Sleep');
+  console.log('  1. auth              - Authenticate with sleep API');
   console.log('  2. profile           - Get user profile');
   console.log('  3. device <id>       - Get device status');
   console.log('  4. temp              - Get temperature settings');
