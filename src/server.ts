@@ -30,12 +30,10 @@ import {
   verifyAccessToken,
   OAuthError,
 } from './auth/http.js';
-import {
-  getSleepAccount,
-  persistSleepAccount,
-  hasPersistedSleepAccounts,
-} from './auth/sleepStorage.js';
-import type { SleepCredentialPayload } from './auth/sleepStorage.js';
+import { SleepAuthProvider } from './providers/sleep/sleepProvider.js';
+import { getProviderCredentials, getAuthProvider } from './auth/http.js';
+import { hasPersistedCredentials, persistCredentials } from './auth/credentialStorage.js';
+import type { CredentialPayload } from './auth/provider.js';
 
 const SERVER_INFO = { name: 'sleep-mcp-server', version: '1.0.0' };
 const PROTOCOL_VERSION = '2025-06-18';
@@ -89,7 +87,7 @@ const getAuthContext = (extra: { authInfo?: unknown }): AuthContext => {
 interface SleepExecutionContext {
   client: SleepClient;
   deviceId: string;
-  account: SleepCredentialPayload;
+  credentials: CredentialPayload;
   subject: string;
   clientId: string;
 }
@@ -99,44 +97,52 @@ const withSleepClient = async <T>(
   handler: (context: SleepExecutionContext) => Promise<T>
 ): Promise<T> => {
   const context = getAuthContext(extra);
+  const provider = getAuthProvider();
 
-  const account = getSleepAccount(context.subject, context.clientId);
-  if (!account) {
-    const error = new Error('Sleep account credentials not found. Please sign in again.');
+  if (!provider) {
+    const error = new Error('Authentication provider not initialized');
+    (error as Error & { code?: number }).code = -32603;
+    (error as any).httpStatus = 500;
+    throw error;
+  }
+
+  const credentials = getProviderCredentials(context.subject, context.clientId);
+  if (!credentials) {
+    const error = new Error('Account credentials not found. Please sign in again.');
     (error as Error & { code?: number }).code = -32603;
     (error as any).httpStatus = 401;
     throw error;
   }
-  if (!account.deviceId) {
+
+  // Use provider to hydrate a fully configured client
+  const client = (await provider.createClient(credentials)) as SleepClient;
+
+  // Get Sleep-specific device ID from metadata
+  const deviceId = credentials.metadata?.deviceId;
+  if (typeof deviceId !== 'string' || deviceId.length === 0) {
     const error = new Error('No Sleep device associated with this account.');
     (error as Error & { code?: number }).code = -32603;
     (error as any).httpStatus = 412;
     throw error;
   }
 
-  const client = new SleepClient({
-    accessToken: account.accessToken,
-    refreshToken: account.refreshToken,
-    expiresAt: account.expiresAt,
-    userId: account.userId,
-  });
-
   const result = await handler({
     client,
-    deviceId: account.deviceId,
-    account,
+    deviceId,
+    credentials,
     subject: context.subject,
     clientId: context.clientId,
   });
 
+  // Check if tokens were refreshed and persist updates
   const updatedTokens = client.getTokenBundle();
   if (
-    updatedTokens.accessToken !== account.accessToken ||
-    updatedTokens.refreshToken !== account.refreshToken ||
-    updatedTokens.expiresAt !== account.expiresAt
+    updatedTokens.accessToken !== credentials.accessToken ||
+    updatedTokens.refreshToken !== credentials.refreshToken ||
+    updatedTokens.expiresAt !== credentials.expiresAt
   ) {
-    persistSleepAccount(context.subject, context.clientId, {
-      ...account,
+    persistCredentials(context.subject, context.clientId, provider.id, {
+      ...credentials,
       accessToken: updatedTokens.accessToken,
       refreshToken: updatedTokens.refreshToken,
       expiresAt: updatedTokens.expiresAt,
@@ -523,8 +529,17 @@ export async function start(): Promise<void> {
   let httpServer: ReturnType<typeof createServer> | undefined;
   try {
     await bootstrap();
-    const authConfig = loadAuthConfig(port);
-    initialiseAuth(authConfig);
+
+    // Initialize authentication with Sleep provider
+    const sleepProvider = new SleepAuthProvider();
+    const defaultScopes = [
+      'sleep.read_device',
+      'sleep.read_trends',
+      'sleep.write_temperature',
+      'sleep.prompts.analyze',
+    ];
+    const authConfig = loadAuthConfig(port, defaultScopes);
+    initialiseAuth(authConfig, { provider: sleepProvider });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       enableJsonResponse,
@@ -585,7 +600,7 @@ export async function start(): Promise<void> {
           }
           res
             .writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
-            .end(JSON.stringify({ status: 'ok', authenticated: hasPersistedSleepAccounts() }));
+            .end(JSON.stringify({ status: 'ok', authenticated: hasPersistedCredentials(sleepProvider.id) }));
           return;
         }
 

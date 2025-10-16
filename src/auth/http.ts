@@ -17,14 +17,14 @@ import {
 } from './tokens.js';
 import { getClient, registerClient } from './store.js';
 import { randomToken } from './utils.js';
-import { SleepClient } from '../client.js';
+import type { AuthenticationProvider, CredentialPayload } from './provider.js';
 import {
-  initialiseSleepStorage,
-  storePendingSleepAuthorization,
-  consumePendingSleepAuthorization,
-  persistSleepAccount,
-  getSleepAccount,
-} from './sleepStorage.js';
+  initialiseCredentialStorage,
+  storePendingCredential,
+  consumePendingCredential,
+  persistCredentials,
+  getPersistedCredentials,
+} from './credentialStorage.js';
 
 const CSRF_TTL_MS = 10 * 60 * 1000;
 const csrfTokens = new Map<string, number>();
@@ -35,7 +35,7 @@ const DEFAULT_LOGIN_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Sleep Account Sign-In</title>
+    <title>{{PROVIDER_NAME}} Account Sign-In</title>
     <style>
       body { font-family: system-ui, sans-serif; background: #f5f5f5; margin: 0; padding: 40px; }
       main { max-width: 420px; margin: 0 auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
@@ -54,7 +54,7 @@ const DEFAULT_LOGIN_TEMPLATE = `<!DOCTYPE html>
   </head>
   <body>
     <main>
-      <h1>Sign in to Sleep</h1>
+      <h1>Sign in to {{PROVIDER_NAME}}</h1>
       <p class="consent">Client <strong>{{CLIENT_ID}}</strong> is requesting access with the following scopes:</p>
       {{SCOPES_LIST}}
       {{ERROR_BLOCK}}
@@ -215,6 +215,7 @@ function renderLoginForm(
       : '<p class="scopes none">No scopes requested</p>';
 
   const html = applyTemplate(loginTemplate, {
+    PROVIDER_NAME: escapeHtml(authProvider?.displayName ?? 'your account'),
     CLIENT_ID: escapeHtml(clientId),
     REDIRECT_URI: escapeHtml(redirectUri),
     STATE: escapeHtml(state),
@@ -270,11 +271,17 @@ function sendJson(res: ServerResponse, body: Record<string, unknown>, status = 2
   res.end(JSON.stringify(body));
 }
 
-export function initialiseAuth(config: ReturnType<typeof loadAuthConfig>) {
+let authProvider: AuthenticationProvider | undefined;
+
+export function initialiseAuth(
+  config: ReturnType<typeof loadAuthConfig>,
+  options: { provider: AuthenticationProvider }
+) {
+  authProvider = options.provider;
   for (const client of config.clients) {
     registerClient(client);
   }
-  initialiseSleepStorage(config);
+  initialiseCredentialStorage(config);
   loadLoginTemplate(config);
 }
 
@@ -337,32 +344,26 @@ async function handleAuthorize(
   }
 
   try {
-    const sleepClient = new SleepClient();
-    const tokenBundle = await sleepClient.authenticate(email, password);
-    const profile = await sleepClient.getUserProfile();
-    const deviceId = profile.currentDevice?.id;
-    if (!deviceId) {
-      throw new Error('No active Sleep device associated with this account.');
+    if (!authProvider) {
+      throw new Error('Authentication provider not initialized');
     }
+
+    const { credentials } = await authProvider.authenticate(email, password);
+
+    const subject = credentials.userId && credentials.userId.length > 0
+      ? credentials.userId
+      : randomToken(16);
 
     const code = generateAuthorizationCode(config, {
       clientId: authorizeContext.clientId,
       redirectUri: authorizeContext.redirectUri,
       scopes: authorizeContext.scopes,
-      subject: profile.userId,
+      subject,
       codeChallenge: authorizeContext.codeChallenge,
       codeChallengeMethod: authorizeContext.codeChallengeMethod,
     });
 
-    storePendingSleepAuthorization(code, {
-      accessToken: tokenBundle.accessToken,
-      refreshToken: tokenBundle.refreshToken,
-      expiresAt: tokenBundle.expiresAt,
-      userId: profile.userId,
-      email: profile.email,
-      firstName: profile.firstName,
-      deviceId,
-    });
+    storePendingCredential(code, authProvider.id, credentials);
 
     const redirect = new URL(authorizeContext.redirectUri);
     redirect.searchParams.set('code', code);
@@ -375,7 +376,7 @@ async function handleAuthorize(
     const message =
       error instanceof Error && /Authentication failed/i.test(error.message)
         ? 'Invalid email or password. Please try again.'
-        : (error as Error).message || 'Unable to authenticate with Sleep.';
+        : (error as Error).message || `Unable to authenticate with ${authProvider?.displayName ?? 'the selected provider'}.`;
     renderLoginForm(res, authorizeContext, {
       csrfToken: issueCsrfToken(),
       error: message,
@@ -410,15 +411,24 @@ async function handleToken(
       const secret = params.get('client_secret') ?? basic?.clientSecret;
       ensureClientSecret(clientId, secret);
     }
+    if (!authProvider) {
+      throw new OAuthError(500, 'server_error', 'Authentication provider not initialized');
+    }
     const record = redeemAuthorizationCode(config, code, clientId, redirectUri, codeVerifier);
-    const sleepCredentials = consumePendingSleepAuthorization(code);
-    if (!sleepCredentials) {
-      throw new OAuthError(400, 'invalid_grant', 'Sleep credentials missing or expired');
+    const pending = consumePendingCredential(code);
+    if (!pending) {
+      throw new OAuthError(400, 'invalid_grant', 'Provider credentials missing or expired');
     }
-    if (sleepCredentials.userId !== record.subject) {
-      throw new OAuthError(400, 'invalid_grant', 'Subject mismatch during Sleep credential exchange');
+    if (pending.providerId !== authProvider.id) {
+      throw new OAuthError(400, 'invalid_grant', 'Provider mismatch during credential exchange');
     }
-    persistSleepAccount(record.subject, clientId, sleepCredentials);
+    const subjectMatches = pending.credentials.userId
+      ? pending.credentials.userId === record.subject
+      : true;
+    if (!subjectMatches) {
+      throw new OAuthError(400, 'invalid_grant', 'Subject mismatch during credential exchange');
+    }
+    persistCredentials(record.subject, clientId, pending.providerId, pending.credentials);
     const response = createTokenResponse(config, record.subject, clientId, record.scopes, true);
     sendJson(res, response);
     return;
@@ -438,10 +448,13 @@ async function handleToken(
     if (!refreshToken) {
       throw new OAuthError(400, 'invalid_request', 'refresh_token missing');
     }
+    if (!authProvider) {
+      throw new OAuthError(500, 'server_error', 'Authentication provider not initialized');
+    }
     const result = refreshAccessToken(config, refreshToken, clientId);
-    const sleepAccount = getSleepAccount(result.subject, clientId);
-    if (!sleepAccount) {
-      throw new OAuthError(400, 'invalid_grant', 'Sleep credentials missing for subject');
+    const stored = getPersistedCredentials(result.subject, clientId);
+    if (!stored || stored.providerId !== authProvider.id) {
+      throw new OAuthError(400, 'invalid_grant', 'Provider credentials missing for subject');
     }
     sendJson(res, result.response);
     return;
@@ -506,13 +519,10 @@ async function handleClientRegistration(
       chunks.push(chunk);
     }
     const bodyStr = Buffer.concat(chunks).toString('utf8');
-    console.error('[mcp] Client registration body:', bodyStr);
     const body = JSON.parse(bodyStr);
-    console.error('[mcp] Parsed body:', body);
     clientName = body.client_name;
     redirectUris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
     scopes = typeof body.scope === 'string' ? body.scope.split(' ').filter(Boolean) : [];
-    console.error('[mcp] Extracted:', { clientName, redirectUris, scopes });
   } else {
     const params = await parseBody(req);
     clientName = params.get('client_name') || undefined;
@@ -521,14 +531,10 @@ async function handleClientRegistration(
   }
 
   if (!clientName || redirectUris.length === 0) {
-    console.error('[mcp] Registration validation failed:', { clientName, redirectUris });
     throw new OAuthError(400, 'invalid_request', 'client_name and redirect_uris required');
   }
 
-  // If no scopes specified, allow all available scopes
-  const allowedScopes = scopes.length > 0
-    ? scopes
-    : ['sleep.read_device', 'sleep.read_trends', 'sleep.write_temperature', 'sleep.prompts.analyze'];
+  const allowedScopes = scopes.length > 0 ? scopes : [];
 
   const clientId = randomToken(24);
   const clientSecret = randomToken(48);
@@ -546,7 +552,7 @@ async function handleClientRegistration(
       client_id: clientId,
       client_secret: clientSecret,
       redirect_uris: redirectUris,
-      scope: scopes.join(' '),
+      scope: allowedScopes.join(' '),
     },
     201
   );
@@ -610,6 +616,31 @@ export function buildCorsHeaders(
     'Access-Control-Expose-Headers': 'Mcp-Session-Id',
     Vary: 'Origin',
   };
+}
+
+/**
+ * Get provider credentials for a user
+ * Used by MCP server to retrieve provider-specific credentials
+ */
+export function getProviderCredentials(
+  subject: string,
+  clientId: string
+): CredentialPayload | undefined {
+  if (!authProvider) {
+    return undefined;
+  }
+  const record = getPersistedCredentials(subject, clientId);
+  if (!record || record.providerId !== authProvider.id) {
+    return undefined;
+  }
+  return record.credentials;
+}
+
+/**
+ * Get the current authentication provider
+ */
+export function getAuthProvider(): AuthenticationProvider | undefined {
+  return authProvider;
 }
 
 export { verifyAccessToken, OAuthError };

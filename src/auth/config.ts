@@ -25,15 +25,16 @@ export interface AuthConfig {
   formTemplatePath?: string;
 }
 
-function parseClients(): OAuthClient[] {
+function parseClients(defaultScopes: string[]): OAuthClient[] {
   const raw = process.env.AUTH_CLIENTS_JSON;
   if (!raw) {
+    // Default development client - scopes come from provider
     return [
       {
         clientId: 'sleep-cli',
         clientSecret: 'dev-secret',
         redirectUris: ['http://localhost:8765/callback'],
-        scopes: ['sleep.read_device', 'sleep.read_trends', 'sleep.write_temperature', 'sleep.prompts.analyze'],
+        scopes: defaultScopes,
         isPublic: false,
       },
     ];
@@ -79,7 +80,7 @@ function deriveKid(secret: Buffer): string {
   return hash.slice(0, 16);
 }
 
-export function loadAuthConfig(port: number): AuthConfig {
+export function loadAuthConfig(port: number, defaultScopes: string[] = []): AuthConfig {
   const issuerFromEnv = process.env.AUTH_ISSUER;
   const issuer =
     issuerFromEnv ??
@@ -89,7 +90,7 @@ export function loadAuthConfig(port: number): AuthConfig {
         ? 'http://localhost'
         : `http://localhost:${port}`);
 
-  const secretString = process.env.AUTH_JWT_SECRET ?? 'sleep-mcp-dev-secret';
+  const secretString = process.env.AUTH_JWT_SECRET ?? 'mcp-dev-secret';
   const jwtSecret = Buffer.from(secretString, 'utf8');
   const encryptionKey = (() => {
     const raw = process.env.AUTH_ENCRYPTION_KEY;
@@ -113,7 +114,7 @@ export function loadAuthConfig(port: number): AuthConfig {
     }
     return crypto.createHash('sha256').update(encryptionKey).digest();
   })();
-  const clients = parseClients();
+  const clients = parseClients(defaultScopes);
 
   const allowedOrigins =
     process.env.ALLOWED_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [];
@@ -122,7 +123,7 @@ export function loadAuthConfig(port: number): AuthConfig {
 
   return {
     issuer,
-    audience: process.env.AUTH_AUDIENCE ?? 'sleep-mcp-server',
+    audience: process.env.AUTH_AUDIENCE ?? 'mcp-server',
     jwtSecret,
     jwtKid: deriveKid(jwtSecret),
     encryptionKey,

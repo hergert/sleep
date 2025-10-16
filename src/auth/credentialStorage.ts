@@ -1,29 +1,26 @@
 import crypto from 'node:crypto';
 import type { AuthConfig } from './config.js';
-
-export interface SleepCredentialPayload {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
-  userId: string;
-  email: string;
-  firstName?: string;
-  deviceId: string;
-}
+import type { CredentialPayload } from './provider.js';
 
 interface PendingRecord {
   data: string;
   expiresAt: number;
+  providerId: string;
+}
+
+interface StoredCredentialRecord {
+  providerId: string;
+  data: string;
 }
 
 let encryptionKey: Buffer | undefined;
 
 const pendingAuthorizations = new Map<string, PendingRecord>();
-const accountStore = new Map<string, string>();
+const credentialStore = new Map<string, StoredCredentialRecord>();
 
 function ensureEncryptionKey(): Buffer {
   if (!encryptionKey) {
-    throw new Error('Sleep credential storage not initialised');
+    throw new Error('Credential storage not initialised');
   }
   return encryptionKey;
 }
@@ -45,7 +42,7 @@ function deserialize(data: string): { iv: Buffer; ciphertext: Buffer; tag: Buffe
   };
 }
 
-function encrypt(payload: SleepCredentialPayload): string {
+function encrypt(payload: CredentialPayload): string {
   const key = ensureEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -55,33 +52,40 @@ function encrypt(payload: SleepCredentialPayload): string {
   return serialize({ iv, ciphertext, tag });
 }
 
-function decrypt(data: string): SleepCredentialPayload {
+function decrypt(data: string): CredentialPayload {
   const key = ensureEncryptionKey();
   const { iv, ciphertext, tag } = deserialize(data);
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  return JSON.parse(decrypted.toString('utf8')) as SleepCredentialPayload;
+  return JSON.parse(decrypted.toString('utf8')) as CredentialPayload;
 }
 
 function accountKey(subject: string, clientId: string): string {
   return `${subject}::${clientId}`;
 }
 
-export function initialiseSleepStorage(config: AuthConfig) {
+export function initialiseCredentialStorage(config: AuthConfig) {
   encryptionKey = Buffer.from(config.encryptionKey);
 }
 
-export function storePendingSleepAuthorization(
+export function storePendingCredential(
   code: string,
-  payload: SleepCredentialPayload,
+  providerId: string,
+  payload: CredentialPayload,
   ttlMilliseconds = 5 * 60 * 1000
 ) {
   const expiresAt = Date.now() + ttlMilliseconds;
-  pendingAuthorizations.set(code, { data: encrypt(payload), expiresAt });
+  pendingAuthorizations.set(code, {
+    providerId,
+    data: encrypt(payload),
+    expiresAt,
+  });
 }
 
-export function consumePendingSleepAuthorization(code: string): SleepCredentialPayload | undefined {
+export function consumePendingCredential(
+  code: string
+): { providerId: string; credentials: CredentialPayload } | undefined {
   const record = pendingAuthorizations.get(code);
   if (!record) {
     return undefined;
@@ -90,38 +94,49 @@ export function consumePendingSleepAuthorization(code: string): SleepCredentialP
   if (record.expiresAt <= Date.now()) {
     return undefined;
   }
-  return decrypt(record.data);
+  return { providerId: record.providerId, credentials: decrypt(record.data) };
 }
 
-export function persistSleepAccount(
+export function persistCredentials(
   subject: string,
   clientId: string,
-  payload: SleepCredentialPayload
+  providerId: string,
+  payload: CredentialPayload
 ) {
-  accountStore.set(accountKey(subject, clientId), encrypt(payload));
+  credentialStore.set(accountKey(subject, clientId), {
+    providerId,
+    data: encrypt(payload),
+  });
 }
 
-export function getSleepAccount(
+export function getPersistedCredentials(
   subject: string,
   clientId: string
-): SleepCredentialPayload | undefined {
-  const record = accountStore.get(accountKey(subject, clientId));
+): { providerId: string; credentials: CredentialPayload } | undefined {
+  const record = credentialStore.get(accountKey(subject, clientId));
   if (!record) {
     return undefined;
   }
   try {
-    return decrypt(record);
+    return { providerId: record.providerId, credentials: decrypt(record.data) };
   } catch (error) {
-    // If decrypt fails (e.g., key rotated), remove corrupted entry.
-    accountStore.delete(accountKey(subject, clientId));
+    credentialStore.delete(accountKey(subject, clientId));
     return undefined;
   }
 }
 
-export function removeSleepAccount(subject: string, clientId: string) {
-  accountStore.delete(accountKey(subject, clientId));
+export function removePersistedCredentials(subject: string, clientId: string) {
+  credentialStore.delete(accountKey(subject, clientId));
 }
 
-export function hasPersistedSleepAccounts(): boolean {
-  return accountStore.size > 0;
+export function hasPersistedCredentials(providerId?: string): boolean {
+  if (providerId) {
+    for (const record of credentialStore.values()) {
+      if (record.providerId === providerId) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return credentialStore.size > 0;
 }

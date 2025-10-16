@@ -1,8 +1,10 @@
 import { describe, expect, test, vi, beforeEach } from 'vitest';
 import { loadAuthConfig } from './auth/config.js';
+import { SleepAuthProvider } from './providers/sleep/sleepProvider.js';
+import type { CredentialPayload } from './auth/provider.js';
 
-type SleepStorageModule = typeof import('./auth/sleepStorage.js');
-let sleepStorage: SleepStorageModule | undefined;
+type CredentialStorageModule = typeof import('./auth/credentialStorage.js');
+let credentialStorage: CredentialStorageModule | undefined;
 
 const mockClient = {
   authenticate: vi.fn(),
@@ -27,11 +29,13 @@ const DEFAULT_TOKEN_BUNDLE = {
   expiresAt: TOKEN_EXPIRES_AT,
   userId: DEFAULT_SUBJECT,
 };
-const BASE_ACCOUNT = {
+const BASE_CREDENTIALS: CredentialPayload = {
   ...DEFAULT_TOKEN_BUNDLE,
   email: 'user@example.com',
-  firstName: 'Test',
-  deviceId: DEFAULT_DEVICE_ID,
+  metadata: {
+    deviceId: DEFAULT_DEVICE_ID,
+    firstName: 'Test',
+  },
 };
 
 const resetMockClient = () => {
@@ -83,27 +87,55 @@ const loadServer = async () => {
   process.env.AUTH_ENCRYPTION_KEY = encryptionKey;
   process.env.AUTH_JWT_SECRET = 'unit-test-secret';
   process.env.SLEEP_TIMEZONE = 'UTC';
+  process.env.AUTH_SESSION_SECRET = 'session-secret';
+  const provider = new SleepAuthProvider();
+  process.env.AUTH_CLIENTS_JSON = JSON.stringify([
+    {
+      clientId: DEFAULT_CLIENT_ID,
+      clientSecret: 'dev-secret',
+      redirectUris: ['http://localhost:8765/callback'],
+      scopes: provider.defaultScopes,
+      isPublic: false,
+    },
+  ]);
 
-  sleepStorage = await import('./auth/sleepStorage.js');
+  credentialStorage = await import('./auth/credentialStorage.js');
+  const authHttp = await import('./auth/http.js');
   const module = await import('./server.js');
-  const config = loadAuthConfig(3000);
-  sleepStorage.initialiseSleepStorage(config);
+  const config = loadAuthConfig(3000, provider.defaultScopes);
+  credentialStorage.initialiseCredentialStorage(config);
+  authHttp.initialiseAuth(config, { provider });
+  if (!authHttp.getAuthProvider()) {
+    throw new Error('Authentication provider failed to initialize in tests');
+  }
   return module;
 };
 
-const seedSleepAccount = (overrides?: Partial<typeof BASE_ACCOUNT>) => {
-  if (!sleepStorage) {
-    throw new Error('Sleep storage not initialised');
+const seedSleepAccount = (overrides?: Partial<CredentialPayload> & { deviceId?: string }) => {
+  if (!credentialStorage) {
+    throw new Error('Credential storage not initialised');
   }
   const subject = overrides?.userId ?? DEFAULT_SUBJECT;
-  sleepStorage.persistSleepAccount(subject, DEFAULT_CLIENT_ID, {
-    ...BASE_ACCOUNT,
+  const overrideMetadata = (overrides?.metadata ?? {}) as Record<string, unknown>;
+  const metadataDeviceIdValue =
+    typeof overrideMetadata.deviceId === 'string'
+      ? (overrideMetadata.deviceId as string)
+      : overrides?.deviceId;
+  const credentials: CredentialPayload = {
+    ...BASE_CREDENTIALS,
     ...overrides,
-  });
-  const stored = sleepStorage.getSleepAccount(subject, DEFAULT_CLIENT_ID);
+    metadata: {
+      ...(BASE_CREDENTIALS.metadata ?? {}),
+      ...overrideMetadata,
+      deviceId: metadataDeviceIdValue ?? DEFAULT_DEVICE_ID,
+    },
+  };
+  credentialStorage.persistCredentials(subject, DEFAULT_CLIENT_ID, 'sleep', credentials);
+  const stored = credentialStorage.getPersistedCredentials(subject, DEFAULT_CLIENT_ID);
   if (!stored) {
     throw new Error('Failed to seed Sleep account for tests');
   }
+  return stored;
 };
 
 describe('Sleep MCP server', () => {
