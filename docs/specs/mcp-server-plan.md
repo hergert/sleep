@@ -37,8 +37,8 @@ Build an MCP server that exposes sleep device capabilities following MCP 2025-06
 - `tsconfig.json` - Ensure server code compiles correctly
 
 **Intent:**
-- `src/server.ts`: Implement an MCP server using the official SDK, declare negotiated capabilities (logging/tools/resources/prompts), wire to EightSleepClient, bootstrap credentials/device metadata, and ensure responses comply with the 2025-06-18 schemas
-- `src/server.test.ts`: Test MCP protocol contracts (initialize response, list/call/read/get flows, structured outputs, error handling) with a mocked EightSleepClient; real-API smoke tests remain manual
+- `src/server.ts`: Implement an MCP server using the official SDK, declare negotiated capabilities (logging/tools/resources/prompts), wire to SleepClient, bootstrap credentials/device metadata, and ensure responses comply with the 2025-06-18 schemas
+- `src/server.test.ts`: Test MCP protocol contracts (initialize response, list/call/read/get flows, structured outputs, error handling) with a mocked SleepClient; real-API smoke tests remain manual
 
 ## Diff Outline (Pseudo-code)
 
@@ -53,22 +53,22 @@ import type {
   ListToolsResponse,
   ToolOutput,
 } from '@modelcontextprotocol/sdk/types.js';
-import { EightSleepClient } from './client.js';
+import { SleepClient } from './client.js';
 
-const EMAIL = process.env.EIGHT_SLEEP_EMAIL;
-const PASSWORD = process.env.EIGHT_SLEEP_PASSWORD;
+const EMAIL = process.env.SLEEP_EMAIL;
+const PASSWORD = process.env.SLEEP_PASSWORD;
 if (!EMAIL || !PASSWORD) {
-  throw new Error('Missing Eight Sleep credentials (EIGHT_SLEEP_EMAIL / EIGHT_SLEEP_PASSWORD)');
+  throw new Error('Missing Sleep credentials (SLEEP_EMAIL / SLEEP_PASSWORD)');
 }
 
-const TIMEZONE = process.env.EIGHT_SLEEP_TIMEZONE ?? 'UTC';
+const TIMEZONE = process.env.SLEEP_TIMEZONE ?? 'UTC';
 
-const client = new EightSleepClient();
+const client = new SleepClient();
 await client.authenticate(EMAIL, PASSWORD);
 const profile = await client.getUserProfile();
 const deviceId = profile.currentDevice?.id;
 if (!deviceId) {
-  throw new Error('No active Eight Sleep device found on user profile');
+  throw new Error('No active Sleep device found on user profile');
 }
 
 const isoDateDaysAgo = (daysAgo: number) => {
@@ -78,7 +78,7 @@ const isoDateDaysAgo = (daysAgo: number) => {
 };
 
 const server = new Server(
-  { name: 'eightsleep-mcp-server', version: '1.0.0' },
+  { name: 'sleep-mcp-server', version: '1.0.0' },
   {
     capabilities: {
       logging: {},
@@ -92,7 +92,7 @@ const server = new Server(
 server.setRequestHandler('initialize', async () => ({
   protocolVersion: '2025-06-18',
   capabilities: server.getCapabilities(),
-  serverInfo: { name: 'eightsleep-mcp-server', version: '1.0.0' },
+  serverInfo: { name: 'sleep-mcp-server', version: '1.0.0' },
 }));
 
 server.setRequestHandler('tools/list', async (): Promise<ListToolsResponse> => ({
@@ -182,14 +182,14 @@ server.setRequestHandler('tools/call', async ({ params }: CallToolRequest): Prom
 server.setRequestHandler('resources/list', async (): Promise<ListResourcesResponse> => ({
   resources: [
     {
-      uri: 'eightsleep://device/status',
+      uri: 'sleep://device/status',
       name: 'device-status',
       title: 'Current Device Status',
       description: 'Heating levels and targets for the active pod.',
       mimeType: 'application/json',
     },
     {
-      uri: 'eightsleep://sleep/latest',
+      uri: 'sleep://sleep/latest',
       name: 'latest-sleep',
       title: 'Most Recent Sleep Session',
       description: 'Latest sleep metrics snapshot.',
@@ -199,7 +199,7 @@ server.setRequestHandler('resources/list', async (): Promise<ListResourcesRespon
 }));
 
 server.setRequestHandler('resources/read', async ({ params }) => {
-  if (params.uri === 'eightsleep://device/status') {
+  if (params.uri === 'sleep://device/status') {
     const status = await client.getDeviceStatus(deviceId);
     return {
       contents: [
@@ -211,7 +211,7 @@ server.setRequestHandler('resources/read', async ({ params }) => {
       ],
     };
   }
-  if (params.uri === 'eightsleep://sleep/latest') {
+  if (params.uri === 'sleep://sleep/latest') {
     const [latest] = await client.getSleepTrends(isoDateDaysAgo(7), isoDateDaysAgo(0), TIMEZONE);
     return {
       contents: [
@@ -257,7 +257,7 @@ server.setRequestHandler('prompts/get', async ({ params }) => {
         role: 'user',
         content: {
           type: 'text',
-          text: `Analyze my Eight Sleep data for the last ${days} days. Highlight trends in score, restlessness, and recommended adjustments.`,
+          text: `Analyze my Sleep data for the last ${days} days. Highlight trends in score, restlessness, and recommended adjustments.`,
         },
       },
       {
@@ -278,7 +278,7 @@ await server.connect(transport);
 
 ## Risks
 
-- **Credentials management**: Server needs `EIGHT_SLEEP_EMAIL` / `EIGHT_SLEEP_PASSWORD`; misconfigured env = auth failures
+- **Credentials management**: Server needs `SLEEP_EMAIL` / `SLEEP_PASSWORD`; misconfigured env = auth failures
   - *Detection*: Test with missing env vars, expect clear error
 - **Token refresh during long sessions**: Access token expires after 1h; must auto-refresh
   - *Detection*: Mock expired token, verify refresh happens transparently
@@ -290,18 +290,18 @@ await server.connect(transport);
 ## Test Strategy
 
 **Contract tests** (MCP protocol compliance):
-- `src/server.test.ts` using a mocked EightSleepClient that simulates token refresh and API responses:
+- `src/server.test.ts` using a mocked SleepClient that simulates token refresh and API responses:
   - `testInitializeHandshake()`: Send `initialize`, verify protocol version `2025-06-18`, capabilities, and server info
   - `testListTools()`: Call `tools/list`, validate JSON Schemas and optional `outputSchema`
   - `testCallSetTemperature()`: Invoke `set_temperature`, ensure request params forwarded and response contains `content` + `structuredContent`
   - `testListResources()`: Call `resources/list`, verify URIs/mime types and pagination defaults
-  - `testReadDeviceStatus()`: Read `eightsleep://device/status`, verify JSON text payload and structured data
+  - `testReadDeviceStatus()`: Read `sleep://device/status`, verify JSON text payload and structured data
   - `testGetPrompt()`: Request `analyze_sleep`, confirm argument defaults and multi-message response
   - `testUnknownIdentifiers()`: Assert `-32602` errors for unknown tool/resource/prompt names
   - `testMissingCredentials()`: Ensure startup throws a descriptive error when env vars absent
 
 **Integration test** (manual / smoke):
-- Use `@modelcontextprotocol/inspector` to connect and test live with real Eight Sleep credentials loaded via env
+- Use `@modelcontextprotocol/inspector` to connect and test live with real Sleep credentials loaded via env
 - Optional long-lived session test to observe token refresh logs and resource freshness
 
 ## Out of Scope

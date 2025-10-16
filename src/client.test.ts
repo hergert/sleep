@@ -4,11 +4,12 @@ import { SleepClient } from './client.js';
 // Integration tests requiring real sleep credentials
 // Set EMAIL and PASSWORD env vars (or CLIENT_TEST_EMAIL/CLIENT_TEST_PASSWORD) to run tests
 
-const email = process.env.EMAIL || process.env.CLIENT_TEST_EMAIL;
-const password = process.env.PASSWORD || process.env.CLIENT_TEST_PASSWORD;
-const hasCredentials = email && password;
+const email = process.env.CLIENT_TEST_EMAIL;
+const password = process.env.CLIENT_TEST_PASSWORD;
+const hasCredentials = Boolean(email && password);
+const describeSuite = hasCredentials ? describe : describe.skip;
 
-describe('SleepClient', () => {
+describeSuite('SleepClient', () => {
   let client: SleepClient;
   let deviceId: string;
 
@@ -19,13 +20,13 @@ describe('SleepClient', () => {
     client = new SleepClient();
   });
 
-  test.skipIf(!hasCredentials)('authenticate with real credentials', async () => {
+  test('authenticate with real credentials', async () => {
     await client.authenticate(email!, password!);
     // If we get here without throwing, authentication succeeded
     expect(true).toBe(true);
   });
 
-  test.skipIf(!hasCredentials)('getUserProfile returns valid data', async () => {
+  test('getUserProfile returns valid data', async () => {
     if (!client) {
       client = new SleepClient();
       await client.authenticate(email!, password!);
@@ -44,7 +45,7 @@ describe('SleepClient', () => {
     deviceId = profile.currentDevice.id;
   });
 
-  test.skipIf(!hasCredentials)('getDeviceStatus returns heating levels', async () => {
+  test('getDeviceStatus returns heating levels', async () => {
     if (!client) {
       client = new SleepClient();
       await client.authenticate(email!, password!);
@@ -61,7 +62,7 @@ describe('SleepClient', () => {
     expect(typeof status.rightNowHeating).toBe('boolean');
   });
 
-  test.skipIf(!hasCredentials)('setHeatingLevel updates temperature', async () => {
+  test('setHeatingLevel updates temperature', async () => {
     if (!client) {
       client = new SleepClient();
       await client.authenticate(email!, password!);
@@ -75,7 +76,7 @@ describe('SleepClient', () => {
     expect(true).toBe(true);
   });
 
-  test.skipIf(!hasCredentials)('getSleepTrends returns sleep data', async () => {
+  test('getSleepTrends returns sleep data', async () => {
     if (!client) {
       client = new SleepClient();
       await client.authenticate(email!, password!);
