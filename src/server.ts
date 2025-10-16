@@ -22,12 +22,20 @@ import { SleepClient } from './client.js';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { loadAuthConfig } from './auth/config.js';
+import {
+  initialiseAuth,
+  handleAuthRequest,
+  buildCorsHeaders,
+  verifyAccessToken,
+  OAuthError,
+} from './auth/http.js';
 
 const SERVER_INFO = { name: 'sleep-mcp-server', version: '1.0.0' };
 const PROTOCOL_VERSION = '2025-06-18';
 
-const EMAIL = process.env.SLEEP_EMAIL || process.env.EMAIL;
-const PASSWORD = process.env.SLEEP_PASSWORD || process.env.PASSWORD;
+const EMAIL = process.env.SLEEP_EMAIL;
+const PASSWORD = process.env.SLEEP_PASSWORD;
 const TIMEZONE = process.env.SLEEP_TIMEZONE ?? 'UTC';
 
 if (!EMAIL || !PASSWORD) {
@@ -43,6 +51,15 @@ const isoDateDaysAgo = (daysAgo: number) => {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() - daysAgo);
   return date.toISOString().slice(0, 10);
+};
+
+const ensureAuthenticated = (extra: { authInfo?: unknown }) => {
+  if (!extra?.authInfo) {
+    const error = new Error('Authentication required');
+    (error as Error & { code?: number }).code = -32603;
+    (error as any).httpStatus = 401;
+    throw error;
+  }
 };
 
 const normalizeDaysWindow = (value: unknown): number => {
@@ -181,7 +198,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(
   CallToolRequestSchema,
-  async ({ params }: CallToolRequest): Promise<CallToolResult> => {
+  async ({ params }: CallToolRequest, extra): Promise<CallToolResult> => {
+    ensureAuthenticated(extra);
     const { name, arguments: rawArgs = {} } = params;
 
     try {
@@ -222,7 +240,7 @@ server.setRequestHandler(
                 annotations: { audience: ['assistant'] },
               },
             ],
-            structuredContent: trends as unknown as { [x: string]: unknown },
+            structuredContent: trends,
           };
         }
 
@@ -236,7 +254,7 @@ server.setRequestHandler(
                 annotations: { audience: ['assistant', 'user'] },
               },
             ],
-            structuredContent: status as unknown as { [x: string]: unknown },
+            structuredContent: status,
           };
         }
 
@@ -247,6 +265,9 @@ server.setRequestHandler(
           };
       }
     } catch (error) {
+      if (error instanceof ScopeError) {
+        throw error;
+      }
       return {
         content: [
           {
@@ -262,40 +283,44 @@ server.setRequestHandler(
 
 server.setRequestHandler(
   ListResourcesRequestSchema,
-  async (): Promise<ListResourcesResult> => ({
-    resources: [
-      {
-        uri: 'sleep://device/status',
-        name: 'device-status',
-        title: 'Current Device Status',
-        description: 'Heating levels, targets, and timers for the active pod.',
-        mimeType: 'application/json',
-        annotations: {
-          audience: ['assistant', 'user'],
-          priority: 0.9,
-          lastModified: new Date().toISOString(),
+  async (_request, extra): Promise<ListResourcesResult> => {
+    ensureAuthenticated(extra);
+    return {
+      resources: [
+        {
+          uri: 'sleep://device/status',
+          name: 'device-status',
+          title: 'Current Device Status',
+          description: 'Heating levels, targets, and timers for the active pod.',
+          mimeType: 'application/json',
+          annotations: {
+            audience: ['assistant', 'user'],
+            priority: 0.9,
+            lastModified: new Date().toISOString(),
+          },
         },
-      },
-      {
-        uri: 'sleep://sleep/latest',
-        name: 'latest-sleep',
-        title: 'Latest Sleep Session',
-        description: 'Most recent nightly sleep metrics snapshot.',
-        mimeType: 'application/json',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.8,
-          lastModified: new Date().toISOString(),
+        {
+          uri: 'sleep://sleep/latest',
+          name: 'latest-sleep',
+          title: 'Latest Sleep Session',
+          description: 'Most recent nightly sleep metrics snapshot.',
+          mimeType: 'application/json',
+          annotations: {
+            audience: ['assistant'],
+            priority: 0.8,
+            lastModified: new Date().toISOString(),
+          },
         },
-      },
-    ],
-  })
+      ],
+    };
+  }
 );
 
-server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
+server.setRequestHandler(ReadResourceRequestSchema, async ({ params }, extra) => {
   const { uri } = params;
 
   if (uri === 'sleep://device/status') {
+    ensureAuthenticated(extra);
     const status = await client.getDeviceStatus(deviceId);
     return {
       contents: [
@@ -309,6 +334,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
   }
 
   if (uri === 'sleep://sleep/latest') {
+    ensureAuthenticated(extra);
     const [latest] = await client.getSleepTrends(
       isoDateDaysAgo(7),
       isoDateDaysAgo(0),
@@ -332,32 +358,36 @@ server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
 
 server.setRequestHandler(
   ListPromptsRequestSchema,
-  async (): Promise<ListPromptsResult> => ({
-    prompts: [
-      {
-        name: 'analyze_sleep',
-        title: 'Analyze Sleep Quality',
-        description: 'Guide the assistant through summarizing recent sleep metrics.',
-        arguments: [
-          {
-            name: 'days',
-            description: 'Number of days to review (default 7, max 14).',
-            required: false,
-            default: 7,
-          },
-        ],
-      },
-    ],
-  })
+  async (_request, extra): Promise<ListPromptsResult> => {
+    ensureAuthenticated(extra);
+    return {
+      prompts: [
+        {
+          name: 'analyze_sleep',
+          title: 'Analyze Sleep Quality',
+          description: 'Guide the assistant through summarizing recent sleep metrics.',
+          arguments: [
+            {
+              name: 'days',
+              description: 'Number of days to review (default 7, max 14).',
+              required: false,
+              default: 7,
+            },
+          ],
+        },
+      ],
+    };
+  }
 );
 
-server.setRequestHandler(GetPromptRequestSchema, async ({ params }) => {
+server.setRequestHandler(GetPromptRequestSchema, async ({ params }, extra) => {
   if (params.name !== 'analyze_sleep') {
     const error = new Error(`Unknown prompt: ${params.name}`);
     (error as Error & { code?: number }).code = -32602;
     throw error;
   }
 
+  ensureAuthenticated(extra);
   const days = normalizeDaysWindow(params.arguments?.days);
 
   return {
@@ -383,11 +413,12 @@ server.setRequestHandler(GetPromptRequestSchema, async ({ params }) => {
   };
 });
 
-server.setRequestHandler(CompleteRequestSchema, async ({ params }) => {
+server.setRequestHandler(CompleteRequestSchema, async ({ params }, extra) => {
   if (params.ref.type === 'ref/prompt' && params.ref.name === 'analyze_sleep') {
     if (params.argument.name !== 'days') {
       return { completion: { values: [], total: 0 } };
     }
+    ensureAuthenticated(extra);
 
     const seedOptions = ['3', '5', '7', '10', '14'];
     const query = params.argument.value?.toString() ?? '';
@@ -408,20 +439,21 @@ server.setRequestHandler(CompleteRequestSchema, async ({ params }) => {
 
 export async function start(): Promise<void> {
   const port = Number.parseInt(process.env.PORT ?? '3000', 10);
-  const allowedHosts = process.env.MCP_ALLOWED_HOSTS?.split(',').map((host) => host.trim()).filter(Boolean);
-  const allowedOrigins = process.env.MCP_ALLOWED_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean);
-  const enableDnsProtection = process.env.MCP_ENABLE_DNS_PROTECTION === 'true';
   const enableJsonResponse = process.env.MCP_ENABLE_JSON_RESPONSE !== 'false';
 
   let httpServer: ReturnType<typeof createServer> | undefined;
   try {
     await bootstrap();
+    const authConfig = loadAuthConfig(port);
+    initialiseAuth(authConfig);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       enableJsonResponse,
-      allowedHosts: allowedHosts && allowedHosts.length > 0 ? allowedHosts : undefined,
-      allowedOrigins: allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : undefined,
-      enableDnsRebindingProtection: enableDnsProtection,
+      allowedHosts:
+        authConfig.allowedHosts.length > 0 ? authConfig.allowedHosts : undefined,
+      allowedOrigins:
+        authConfig.allowedOrigins.length > 0 ? authConfig.allowedOrigins : undefined,
+      enableDnsRebindingProtection: authConfig.dnsRebindingProtection,
     });
     await server.connect(transport);
     httpServer = createServer(async (req, res) => {
@@ -431,23 +463,97 @@ export async function start(): Promise<void> {
           return;
         }
 
-        if (req.url.startsWith('/health')) {
+        const url = new URL(req.url, authConfig.issuer);
+
+        if (await handleAuthRequest(authConfig, req, res, url)) {
+          return;
+        }
+
+        let corsHeaders: Record<string, string> = {};
+        if (req.method === 'OPTIONS' || url.pathname.startsWith('/mcp')) {
+          try {
+            corsHeaders = buildCorsHeaders(authConfig, req.headers.origin);
+          } catch (error) {
+            if (error instanceof OAuthError) {
+              res
+                .writeHead(error.status, { 'Content-Type': 'application/json' })
+                .end(
+                  JSON.stringify({
+                    error: error.error,
+                    error_description: error.description,
+                  })
+                );
+              return;
+            }
+            throw error;
+          }
+        }
+        for (const [header, value] of Object.entries(corsHeaders)) {
+          res.setHeader(header, value);
+        }
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204).end();
+          return;
+        }
+
+        if (url.pathname === '/health') {
           if (req.method && req.method !== 'GET') {
             res.writeHead(405).end();
             return;
           }
           res
-            .writeHead(200, { 'Content-Type': 'application/json' })
+            .writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
             .end(JSON.stringify({ status: 'ok', authenticated: Boolean(deviceId) }));
           return;
         }
 
-        if (!req.url.startsWith('/mcp')) {
+        if (!url.pathname.startsWith('/mcp')) {
           res.writeHead(404).end();
           return;
         }
 
-        await transport.handleRequest(req, res);
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          res
+            .writeHead(401, {
+              'Content-Type': 'application/json',
+              'WWW-Authenticate': 'Bearer realm="sleep-mcp-server"',
+              ...corsHeaders,
+            })
+            .end(JSON.stringify({ error: 'invalid_token', error_description: 'Bearer token required' }));
+          return;
+        }
+
+        const token = authHeader.slice('Bearer '.length);
+        let verified;
+        try {
+          verified = verifyAccessToken(authConfig, token);
+        } catch (error) {
+          res
+            .writeHead(401, {
+              'Content-Type': 'application/json',
+              'WWW-Authenticate': 'Bearer error="invalid_token"',
+              ...corsHeaders,
+            })
+            .end(
+              JSON.stringify({
+                error: 'invalid_token',
+                error_description: (error as Error).message,
+              })
+            );
+          return;
+        }
+
+        (req as any).auth = {
+          token,
+          clientId: verified.clientId,
+          scopes: verified.scopes,
+          expiresAt: verified.expiresAt,
+          extra: { subject: verified.subject },
+        };
+
+        await transport.handleRequest(req as any, res);
       } catch (error) {
         console.error('[mcp] Failed to handle HTTP request:', error);
         if (!res.headersSent) {

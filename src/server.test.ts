@@ -20,12 +20,30 @@ const resetMockClient = () => {
   mockClient.getDeviceStatus.mockReset();
 };
 
-const createExtra = () => ({
-  signal: new AbortController().signal,
-  requestId: 1,
-  sendNotification: vi.fn(),
-  sendRequest: vi.fn(),
-});
+const createExtra = (options?: { scopes?: string[]; authenticated?: boolean }) => {
+  const scopes =
+    options?.scopes ??
+    ['sleep.read_device', 'sleep.read_trends', 'sleep.write_temperature', 'sleep.prompts.analyze'];
+  const authenticated = options?.authenticated ?? true;
+  const base = {
+    signal: new AbortController().signal,
+    requestId: 1,
+    sendNotification: vi.fn(),
+    sendRequest: vi.fn(),
+  };
+  if (!authenticated) {
+    return base;
+  }
+  return {
+    ...base,
+    authInfo: {
+      token: 'test-token',
+      clientId: 'sleep-cli',
+      scopes,
+      expiresAt: Date.now() / 1000 + 60,
+    },
+  };
+};
 
 const loadServer = async () => {
   vi.resetModules();
@@ -148,6 +166,23 @@ describe('Sleep MCP server', () => {
     expect(result.resources[1].annotations?.priority).toBeCloseTo(0.8);
   });
 
+  test('resources/list succeeds with authenticated request regardless of scopes', async () => {
+    const { bootstrap, server } = await loadServer();
+    mockClient.authenticate.mockResolvedValue(undefined);
+    mockClient.getUserProfile.mockResolvedValue({
+      email: 'user@example.com',
+      firstName: 'Test',
+      currentDevice: { id: 'device-123', side: 'right' },
+    });
+    await bootstrap();
+
+    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+      'resources/list'
+    );
+    const result = await handler!({ method: 'resources/list', params: {} }, createExtra({ scopes: [] }));
+    expect(result.resources).toHaveLength(2);
+  });
+
   test('tools/call set_temperature forwards arguments and returns structuredContent', async () => {
     const { bootstrap, server } = await loadServer();
     mockClient.authenticate.mockResolvedValue(undefined);
@@ -168,12 +203,38 @@ describe('Sleep MCP server', () => {
         method: 'tools/call',
         params: { name: 'set_temperature', arguments: { level: 25, durationSeconds: 60 } },
       },
-      createExtra()
+      createExtra({ scopes: [] })
     );
 
     expect(mockClient.setHeatingLevel).toHaveBeenCalledWith(25, 60);
     expect(result.structuredContent).toEqual({ status: 'ok', level: 25, durationSeconds: 60 });
     expect(result.content[0].text).toMatch(/Temperature set to 25/);
+  });
+
+  test('tools/call set_temperature rejects unauthenticated requests', async () => {
+    const { bootstrap, server } = await loadServer();
+    mockClient.authenticate.mockResolvedValue(undefined);
+    mockClient.getUserProfile.mockResolvedValue({
+      email: 'user@example.com',
+      firstName: 'Test',
+      currentDevice: { id: 'device-123', side: 'right' },
+    });
+    await bootstrap();
+
+    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+      'tools/call'
+    );
+    expect(handler).toBeDefined();
+
+    await expect(
+      handler!(
+        {
+          method: 'tools/call',
+          params: { name: 'set_temperature', arguments: { level: 10, durationSeconds: 30 } },
+        },
+        createExtra({ authenticated: false })
+      )
+    ).rejects.toMatchObject({ message: expect.stringContaining('Authentication required') });
   });
 
   test('resources/read returns serialized device status', async () => {
@@ -238,12 +299,35 @@ describe('Sleep MCP server', () => {
     expect(handler).toBeDefined();
     const result = await handler!(
       { method: 'prompts/get', params: { name: 'analyze_sleep', arguments: { days: '5' } } },
-      createExtra()
+      createExtra({ scopes: [] })
     );
 
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0].content.text).toMatch(/last 5 days/);
     expect(result.messages[0].content.annotations?.priority).toBe(1);
+  });
+
+  test('prompts/get rejects unauthenticated requests', async () => {
+    const { bootstrap, server } = await loadServer();
+    mockClient.authenticate.mockResolvedValue(undefined);
+    mockClient.getUserProfile.mockResolvedValue({
+      email: 'user@example.com',
+      firstName: 'Test',
+      currentDevice: { id: 'device-123', side: 'right' },
+    });
+    await bootstrap();
+
+    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+      'prompts/get'
+    );
+    expect(handler).toBeDefined();
+
+    await expect(
+      handler!(
+        { method: 'prompts/get', params: { name: 'analyze_sleep', arguments: { days: '3' } } },
+        createExtra({ authenticated: false })
+      )
+    ).rejects.toMatchObject({ message: expect.stringContaining('Authentication required') });
   });
 
   test('prompts/get rejects out-of-range days', async () => {
