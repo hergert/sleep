@@ -215,7 +215,7 @@ export function refreshAccessToken(
   config: ReturnType<typeof loadAuthConfig>,
   token: string,
   clientId: string
-): Record<string, unknown> {
+): { response: Record<string, unknown>; subject: string; scopes: string[] } {
   const hashed = hashToken(token);
   const existing = consumeRefreshToken(hashed);
   if (!existing) {
@@ -233,11 +233,15 @@ export function refreshAccessToken(
     expiresAt: result.refreshTokenExpiresAt!,
   });
   return {
-    token_type: ACCESS_TOKEN_TYPE,
-    access_token: result.accessToken,
-    expires_in: config.accessTokenTtlSeconds,
-    refresh_token: result.refreshToken,
-    scope: existing.scopes.join(' '),
+    response: {
+      token_type: ACCESS_TOKEN_TYPE,
+      access_token: result.accessToken,
+      expires_in: config.accessTokenTtlSeconds,
+      refresh_token: result.refreshToken,
+      scope: existing.scopes.join(' '),
+    },
+    subject: existing.subject,
+    scopes: existing.scopes,
   };
 }
 
@@ -303,8 +307,9 @@ export function buildJwks(config: ReturnType<typeof loadAuthConfig>) {
 }
 
 export function validateScopes(requested: string[], allowed: string[]): string[] {
+  // If no scopes requested, grant all allowed scopes
   if (requested.length === 0) {
-    throw new OAuthError(400, 'invalid_scope', 'Scopes required');
+    return allowed;
   }
   for (const scope of requested) {
     if (!allowed.includes(scope)) {
@@ -327,6 +332,4 @@ export function ensureClientSecret(clientId: string, providedSecret: string | un
   }
 }
 
-export function computeSubject(): string {
-  return process.env.SLEEP_EMAIL ?? 'sleep-user';
-}
+// Removed: computeSubject() - no longer needed with OAuth user authentication

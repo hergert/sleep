@@ -30,22 +30,17 @@ import {
   verifyAccessToken,
   OAuthError,
 } from './auth/http.js';
+import {
+  getSleepAccount,
+  persistSleepAccount,
+  hasPersistedSleepAccounts,
+} from './auth/sleepStorage.js';
+import type { SleepCredentialPayload } from './auth/sleepStorage.js';
 
 const SERVER_INFO = { name: 'sleep-mcp-server', version: '1.0.0' };
 const PROTOCOL_VERSION = '2025-06-18';
 
-const EMAIL = process.env.SLEEP_EMAIL;
-const PASSWORD = process.env.SLEEP_PASSWORD;
 const TIMEZONE = process.env.SLEEP_TIMEZONE ?? 'UTC';
-
-if (!EMAIL || !PASSWORD) {
-  throw new Error(
-    'Missing credentials: set SLEEP_EMAIL and SLEEP_PASSWORD environment variables.'
-  );
-}
-
-export const client = new SleepClient();
-let deviceId: string;
 
 const isoDateDaysAgo = (daysAgo: number) => {
   const date = new Date();
@@ -53,13 +48,102 @@ const isoDateDaysAgo = (daysAgo: number) => {
   return date.toISOString().slice(0, 10);
 };
 
-const ensureAuthenticated = (extra: { authInfo?: unknown }) => {
+type RawAuthInfo = {
+  token?: string;
+  clientId?: string;
+  scopes?: string[];
+  expiresAt?: number;
+  extra?: { subject?: string };
+  [key: string]: unknown;
+};
+
+interface AuthContext {
+  subject: string;
+  clientId: string;
+  authInfo: RawAuthInfo;
+}
+
+const ensureAuthenticated = (extra: { authInfo?: unknown }): RawAuthInfo => {
   if (!extra?.authInfo) {
     const error = new Error('Authentication required');
     (error as Error & { code?: number }).code = -32603;
     (error as any).httpStatus = 401;
     throw error;
   }
+  return extra.authInfo as RawAuthInfo;
+};
+
+const getAuthContext = (extra: { authInfo?: unknown }): AuthContext => {
+  const authInfo = ensureAuthenticated(extra);
+  const clientId = authInfo.clientId;
+  const subject = authInfo.extra?.subject;
+  if (!clientId || !subject) {
+    const error = new Error('Authenticated subject not available');
+    (error as Error & { code?: number }).code = -32603;
+    (error as any).httpStatus = 401;
+    throw error;
+  }
+  return { subject, clientId, authInfo };
+};
+
+interface SleepExecutionContext {
+  client: SleepClient;
+  deviceId: string;
+  account: SleepCredentialPayload;
+  subject: string;
+  clientId: string;
+}
+
+const withSleepClient = async <T>(
+  extra: { authInfo?: unknown },
+  handler: (context: SleepExecutionContext) => Promise<T>
+): Promise<T> => {
+  const context = getAuthContext(extra);
+
+  const account = getSleepAccount(context.subject, context.clientId);
+  if (!account) {
+    const error = new Error('Sleep account credentials not found. Please sign in again.');
+    (error as Error & { code?: number }).code = -32603;
+    (error as any).httpStatus = 401;
+    throw error;
+  }
+  if (!account.deviceId) {
+    const error = new Error('No Sleep device associated with this account.');
+    (error as Error & { code?: number }).code = -32603;
+    (error as any).httpStatus = 412;
+    throw error;
+  }
+
+  const client = new SleepClient({
+    accessToken: account.accessToken,
+    refreshToken: account.refreshToken,
+    expiresAt: account.expiresAt,
+    userId: account.userId,
+  });
+
+  const result = await handler({
+    client,
+    deviceId: account.deviceId,
+    account,
+    subject: context.subject,
+    clientId: context.clientId,
+  });
+
+  const updatedTokens = client.getTokenBundle();
+  if (
+    updatedTokens.accessToken !== account.accessToken ||
+    updatedTokens.refreshToken !== account.refreshToken ||
+    updatedTokens.expiresAt !== account.expiresAt
+  ) {
+    persistSleepAccount(context.subject, context.clientId, {
+      ...account,
+      accessToken: updatedTokens.accessToken,
+      refreshToken: updatedTokens.refreshToken,
+      expiresAt: updatedTokens.expiresAt,
+    });
+  }
+
+  return result;
 };
 
 const normalizeDaysWindow = (value: unknown): number => {
@@ -84,16 +168,7 @@ const normalizeDaysWindow = (value: unknown): number => {
 };
 
 export async function bootstrap(): Promise<void> {
-  await client.authenticate(EMAIL!, PASSWORD!);
-  const profile = await client.getUserProfile();
-
-  deviceId = profile.currentDevice?.id ?? '';
-  if (!deviceId) {
-    throw new Error('No active Sleep device associated with the authenticated account.');
-  }
-
-  console.error(`[mcp] Authenticated Sleep user: ${profile.email}`);
-  console.error(`[mcp] Active device detected: ${deviceId}`);
+  console.error('[mcp] Sleep MCP server initialised. Awaiting user authentication via OAuth.');
 }
 
 export const server = new Server(
@@ -164,7 +239,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         additionalProperties: false,
-        required: ['from', 'to'],
+        required: ['from', 'to', 'timezone'],
         properties: {
           from: {
             type: 'string',
@@ -178,7 +253,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           timezone: {
             type: 'string',
-            default: TIMEZONE,
             description: 'IANA timezone used to aggregate daily metrics.',
           },
         },
@@ -199,7 +273,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(
   CallToolRequestSchema,
   async ({ params }: CallToolRequest, extra): Promise<CallToolResult> => {
-    ensureAuthenticated(extra);
     const { name, arguments: rawArgs = {} } = params;
 
     try {
@@ -209,53 +282,64 @@ server.setRequestHandler(
             level: number;
             durationSeconds?: number;
           };
-          await client.setHeatingLevel(level, durationSeconds);
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Temperature set to ${level} for ${
-                  durationSeconds === 0 ? 'an indefinite period' : `${durationSeconds} seconds`
-                }.`,
-              },
-            ],
-            structuredContent: { status: 'ok', level, durationSeconds },
-          };
+          return await withSleepClient(extra, async ({ client }) => {
+            await client.setHeatingLevel(level, durationSeconds);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Temperature set to ${level} for ${
+                    durationSeconds === 0 ? 'an indefinite period' : `${durationSeconds} seconds`
+                  }.`,
+                },
+              ],
+              structuredContent: { status: 'ok', level, durationSeconds },
+            };
+          });
         }
 
         case 'get_sleep_trends': {
-          const { from, to, timezone = TIMEZONE } = rawArgs as {
+          const { from, to, timezone } = rawArgs as {
             from: string;
             to: string;
             timezone?: string;
           };
-          const trends = await client.getSleepTrends(from, to, timezone);
+          const coercedTimezone = typeof timezone === 'string' ? timezone.trim() : '';
+          if (!coercedTimezone) {
+            const error = new Error('Argument "timezone" is required.');
+            (error as Error & { code?: number }).code = -32602;
+            throw error;
+          }
+          return await withSleepClient(extra, async ({ client }) => {
+            const trends = await client.getSleepTrends(from, to, coercedTimezone);
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(trends, null, 2),
-                annotations: { audience: ['assistant'] },
-              },
-            ],
-            structuredContent: trends,
-          };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(trends, null, 2),
+                  annotations: { audience: ['assistant'] },
+                },
+              ],
+              structuredContent: trends as unknown as Record<string, unknown>,
+            };
+          });
         }
 
         case 'get_device_status': {
-          const status = await client.getDeviceStatus(deviceId);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(status, null, 2),
-                annotations: { audience: ['assistant', 'user'] },
-              },
-            ],
-            structuredContent: status,
-          };
+          return await withSleepClient(extra, async ({ client, deviceId }) => {
+            const status = await client.getDeviceStatus(deviceId);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(status, null, 2),
+                  annotations: { audience: ['assistant', 'user'] },
+                },
+              ],
+              structuredContent: status as unknown as Record<string, unknown>,
+            };
+          });
         }
 
         default:
@@ -265,9 +349,6 @@ server.setRequestHandler(
           };
       }
     } catch (error) {
-      if (error instanceof ScopeError) {
-        throw error;
-      }
       return {
         content: [
           {
@@ -320,35 +401,33 @@ server.setRequestHandler(ReadResourceRequestSchema, async ({ params }, extra) =>
   const { uri } = params;
 
   if (uri === 'sleep://device/status') {
-    ensureAuthenticated(extra);
-    const status = await client.getDeviceStatus(deviceId);
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: 'application/json',
-          text: JSON.stringify(status),
-        },
-      ],
-    };
+    return withSleepClient(extra, async ({ client, deviceId }) => {
+      const status = await client.getDeviceStatus(deviceId);
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(status),
+          },
+        ],
+      };
+    });
   }
 
   if (uri === 'sleep://sleep/latest') {
-    ensureAuthenticated(extra);
-    const [latest] = await client.getSleepTrends(
-      isoDateDaysAgo(7),
-      isoDateDaysAgo(0),
-      TIMEZONE
-    );
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: 'application/json',
-          text: JSON.stringify(latest ?? null),
-        },
-      ],
-    };
+    return withSleepClient(extra, async ({ client }) => {
+      const [latest] = await client.getSleepTrends(isoDateDaysAgo(7), isoDateDaysAgo(0), TIMEZONE);
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(latest ?? null),
+          },
+        ],
+      };
+    });
   }
 
   const error = new Error(`Unknown resource URI: ${uri}`);
@@ -465,12 +544,10 @@ export async function start(): Promise<void> {
 
         const url = new URL(req.url, authConfig.issuer);
 
-        if (await handleAuthRequest(authConfig, req, res, url)) {
-          return;
-        }
-
+        // Apply CORS headers early for all OAuth and MCP endpoints
         let corsHeaders: Record<string, string> = {};
-        if (req.method === 'OPTIONS' || url.pathname.startsWith('/mcp')) {
+        const isOAuthPath = ['/authorize', '/token', '/jwks.json', '/.well-known/oauth-authorization-server', '/register'].includes(url.pathname);
+        if (req.method === 'OPTIONS' || url.pathname.startsWith('/mcp') || isOAuthPath) {
           try {
             corsHeaders = buildCorsHeaders(authConfig, req.headers.origin);
           } catch (error) {
@@ -497,6 +574,10 @@ export async function start(): Promise<void> {
           return;
         }
 
+        if (await handleAuthRequest(authConfig, req, res, url)) {
+          return;
+        }
+
         if (url.pathname === '/health') {
           if (req.method && req.method !== 'GET') {
             res.writeHead(405).end();
@@ -504,7 +585,7 @@ export async function start(): Promise<void> {
           }
           res
             .writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
-            .end(JSON.stringify({ status: 'ok', authenticated: Boolean(deviceId) }));
+            .end(JSON.stringify({ status: 'ok', authenticated: hasPersistedSleepAccounts() }));
           return;
         }
 

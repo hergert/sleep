@@ -1,9 +1,4 @@
-import type {
-  TokenResponse,
-  UserProfile,
-  DeviceStatus,
-  SleepDay,
-} from './types.js';
+import type { TokenResponse, UserProfile, DeviceStatus, SleepDay } from './types.js';
 
 const AUTH_BASE_URL = 'https://auth-api.8slp.net/v1';
 const CLIENT_BASE_URL = 'https://client-api.8slp.net/v1';
@@ -12,17 +7,53 @@ const APP_BASE_URL = 'https://app-api.8slp.net/v1';
 const CLIENT_ID = '0894c7f33bb94800a03f1f4df13a4f38';
 const CLIENT_SECRET = 'f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76';
 
+export interface SleepTokenBundle {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+}
+
 export class SleepClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private expiresAt: number = 0;
   private userId: string | null = null;
 
+  constructor(initialTokens?: SleepTokenBundle) {
+    if (initialTokens) {
+      this.applyTokenBundle(initialTokens);
+    }
+  }
+
+  private applyTokenBundle(bundle: SleepTokenBundle) {
+    this.accessToken = bundle.accessToken;
+    this.refreshToken = bundle.refreshToken;
+    this.userId = bundle.userId;
+    this.expiresAt = bundle.expiresAt;
+  }
+
+  getTokenBundle(): SleepTokenBundle {
+    if (!this.accessToken || !this.refreshToken || !this.userId) {
+      throw new Error('Sleep client not authenticated');
+    }
+    return {
+      accessToken: this.accessToken,
+      refreshToken: this.refreshToken,
+      userId: this.userId,
+      expiresAt: this.expiresAt,
+    };
+  }
+
+  setTokenBundle(bundle: SleepTokenBundle) {
+    this.applyTokenBundle(bundle);
+  }
+
   /**
    * Authenticate with sleep API using email and password.
    * Stores access token, refresh token, and userId for subsequent requests.
    */
-  async authenticate(email: string, password: string): Promise<void> {
+  async authenticate(email: string, password: string): Promise<SleepTokenBundle> {
     const response = await fetch(`${AUTH_BASE_URL}/tokens`, {
       method: 'POST',
       headers: {
@@ -44,16 +75,19 @@ export class SleepClient {
     }
 
     const data: TokenResponse = await response.json();
-    this.accessToken = data.access_token;
-    this.refreshToken = data.refresh_token;
-    this.userId = data.userId;
-    this.expiresAt = Date.now() + data.expires_in * 1000;
+    this.applyTokenBundle({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      userId: data.userId,
+      expiresAt: Date.now() + data.expires_in * 1000,
+    });
+    return this.getTokenBundle();
   }
 
   /**
    * Refresh the access token using the stored refresh token.
    */
-  private async refreshAccessToken(): Promise<void> {
+  private async refreshAccessToken(): Promise<SleepTokenBundle> {
     if (!this.refreshToken) {
       throw new Error('No refresh token available. Please authenticate first.');
     }
@@ -77,9 +111,16 @@ export class SleepClient {
     }
 
     const data: Omit<TokenResponse, 'userId'> = await response.json();
-    this.accessToken = data.access_token;
-    this.refreshToken = data.refresh_token;
-    this.expiresAt = Date.now() + data.expires_in * 1000;
+    if (!this.userId) {
+      throw new Error('User ID missing during token refresh');
+    }
+    this.applyTokenBundle({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      userId: this.userId,
+      expiresAt: Date.now() + data.expires_in * 1000,
+    });
+    return this.getTokenBundle();
   }
 
   /**

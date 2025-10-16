@@ -13,6 +13,8 @@ export interface AuthConfig {
   audience: string;
   jwtSecret: Buffer;
   jwtKid: string;
+  encryptionKey: Buffer;
+  sessionSecret: Buffer;
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   clients: OAuthClient[];
@@ -20,6 +22,7 @@ export interface AuthConfig {
   allowedOrigins: string[];
   allowedHosts: string[];
   dnsRebindingProtection: boolean;
+  formTemplatePath?: string;
 }
 
 function parseClients(): OAuthClient[] {
@@ -88,6 +91,28 @@ export function loadAuthConfig(port: number): AuthConfig {
 
   const secretString = process.env.AUTH_JWT_SECRET ?? 'sleep-mcp-dev-secret';
   const jwtSecret = Buffer.from(secretString, 'utf8');
+  const encryptionKey = (() => {
+    const raw = process.env.AUTH_ENCRYPTION_KEY;
+    if (raw) {
+      try {
+        const decoded = Buffer.from(raw, 'base64');
+        if (decoded.length !== 32) {
+          throw new Error('AUTH_ENCRYPTION_KEY must decode to 32 bytes for AES-256-GCM');
+        }
+        return decoded;
+      } catch (error) {
+        throw new Error(`Failed to decode AUTH_ENCRYPTION_KEY: ${(error as Error).message}`);
+      }
+    }
+    return crypto.createHash('sha256').update(jwtSecret).digest();
+  })();
+  const sessionSecret = (() => {
+    const raw = process.env.AUTH_SESSION_SECRET;
+    if (raw) {
+      return crypto.createHash('sha256').update(raw, 'utf8').digest();
+    }
+    return crypto.createHash('sha256').update(encryptionKey).digest();
+  })();
   const clients = parseClients();
 
   const allowedOrigins =
@@ -100,6 +125,8 @@ export function loadAuthConfig(port: number): AuthConfig {
     audience: process.env.AUTH_AUDIENCE ?? 'sleep-mcp-server',
     jwtSecret,
     jwtKid: deriveKid(jwtSecret),
+    encryptionKey,
+    sessionSecret,
     accessTokenTtlSeconds: Number.parseInt(process.env.ACCESS_TOKEN_TTL_SECONDS ?? '900', 10),
     refreshTokenTtlSeconds: Number.parseInt(process.env.REFRESH_TOKEN_TTL_SECONDS ?? '2592000', 10),
     clients,
@@ -107,5 +134,6 @@ export function loadAuthConfig(port: number): AuthConfig {
     allowedOrigins,
     allowedHosts,
     dnsRebindingProtection: process.env.MCP_ENABLE_DNS_PROTECTION === 'true',
+    formTemplatePath: process.env.AUTH_FORM_TEMPLATE,
   };
 }

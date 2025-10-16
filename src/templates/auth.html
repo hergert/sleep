@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sleep Account Sign-In</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #f5f5f5; margin: 0; padding: 40px; }
+      main { max-width: 420px; margin: 0 auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
+      h1 { margin-top: 0; font-size: 1.5rem; }
+      label { display: block; margin-bottom: 12px; }
+      input[type="email"], input[type="password"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #d0d0d0; font-size: 1rem; }
+      .actions { display: flex; gap: 12px; margin-top: 24px; }
+      button { flex: 1; padding: 12px; font-size: 1rem; border: none; border-radius: 6px; cursor: pointer; }
+      button[type="submit"] { background: #2d5cf6; color: #fff; }
+      button.secondary { background: #e0e0e0; color: #333; }
+      .scopes { margin: 16px 0; padding-left: 20px; }
+      .scopes.none { list-style: none; padding-left: 0; color: #555; }
+      .error { color: #c00; background: #ffe5e5; padding: 8px 12px; border-radius: 6px; }
+      .consent { font-size: 0.9rem; color: #555; margin-bottom: 16px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in to Sleep</h1>
+      <p class="consent">Client <strong>{{CLIENT_ID}}</strong> is requesting access with the following scopes:</p>
+      {{SCOPES_LIST}}
+      {{ERROR_BLOCK}}
+      <form method="post" action="/authorize">
+        <input type="hidden" name="response_type" value="code" />
+        <input type="hidden" name="client_id" value="{{CLIENT_ID}}" />
+        <input type="hidden" name="redirect_uri" value="{{REDIRECT_URI}}" />
+        <input type="hidden" name="state" value="{{STATE}}" />
+        <input type="hidden" name="scope" value="{{SCOPE_PARAM}}" />
+        <input type="hidden" name="code_challenge" value="{{CODE_CHALLENGE}}" />
+        <input type="hidden" name="code_challenge_method" value="{{CODE_CHALLENGE_METHOD}}" />
+        <input type="hidden" name="csrf_token" value="{{CSRF_TOKEN}}" />
+        <label>
+          Email
+          <input type="email" name="email" autocomplete="email" value="{{EMAIL_VALUE}}" required />
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <div class="actions">
+          <button type="submit" name="action" value="approve">Continue</button>
+          <button type="submit" name="action" value="cancel" class="secondary">Cancel</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

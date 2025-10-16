@@ -1,4 +1,8 @@
 import { describe, expect, test, vi, beforeEach } from 'vitest';
+import { loadAuthConfig } from './auth/config.js';
+
+type SleepStorageModule = typeof import('./auth/sleepStorage.js');
+let sleepStorage: SleepStorageModule | undefined;
 
 const mockClient = {
   authenticate: vi.fn(),
@@ -6,11 +10,29 @@ const mockClient = {
   setHeatingLevel: vi.fn(),
   getSleepTrends: vi.fn(),
   getDeviceStatus: vi.fn(),
+  getTokenBundle: vi.fn(),
 };
 
 vi.mock('./client.js', () => ({
   SleepClient: vi.fn(() => mockClient),
 }));
+
+const DEFAULT_SUBJECT = 'user-123';
+const DEFAULT_CLIENT_ID = 'sleep-cli';
+const DEFAULT_DEVICE_ID = 'device-123';
+const TOKEN_EXPIRES_AT = 1_700_000_000_000;
+const DEFAULT_TOKEN_BUNDLE = {
+  accessToken: 'access-token',
+  refreshToken: 'refresh-token',
+  expiresAt: TOKEN_EXPIRES_AT,
+  userId: DEFAULT_SUBJECT,
+};
+const BASE_ACCOUNT = {
+  ...DEFAULT_TOKEN_BUNDLE,
+  email: 'user@example.com',
+  firstName: 'Test',
+  deviceId: DEFAULT_DEVICE_ID,
+};
 
 const resetMockClient = () => {
   mockClient.authenticate.mockReset();
@@ -18,13 +40,20 @@ const resetMockClient = () => {
   mockClient.setHeatingLevel.mockReset();
   mockClient.getSleepTrends.mockReset();
   mockClient.getDeviceStatus.mockReset();
+  mockClient.getTokenBundle.mockReset();
+  mockClient.getTokenBundle.mockImplementation(() => ({ ...DEFAULT_TOKEN_BUNDLE }));
 };
 
-const createExtra = (options?: { scopes?: string[]; authenticated?: boolean }) => {
+const createExtra = (options?: {
+  scopes?: string[];
+  authenticated?: boolean;
+  subject?: string;
+}) => {
   const scopes =
     options?.scopes ??
     ['sleep.read_device', 'sleep.read_trends', 'sleep.write_temperature', 'sleep.prompts.analyze'];
   const authenticated = options?.authenticated ?? true;
+  const subject = options?.subject ?? DEFAULT_SUBJECT;
   const base = {
     signal: new AbortController().signal,
     requestId: 1,
@@ -38,9 +67,10 @@ const createExtra = (options?: { scopes?: string[]; authenticated?: boolean }) =
     ...base,
     authInfo: {
       token: 'test-token',
-      clientId: 'sleep-cli',
+      clientId: DEFAULT_CLIENT_ID,
       scopes,
       expiresAt: Date.now() / 1000 + 60,
+      extra: { subject },
     },
   };
 };
@@ -49,11 +79,31 @@ const loadServer = async () => {
   vi.resetModules();
   resetMockClient();
 
-  process.env.SLEEP_EMAIL = 'user@example.com';
-  process.env.SLEEP_PASSWORD = 'secret';
+  const encryptionKey = Buffer.alloc(32, 2).toString('base64');
+  process.env.AUTH_ENCRYPTION_KEY = encryptionKey;
+  process.env.AUTH_JWT_SECRET = 'unit-test-secret';
   process.env.SLEEP_TIMEZONE = 'UTC';
 
-  return import('./server.js');
+  sleepStorage = await import('./auth/sleepStorage.js');
+  const module = await import('./server.js');
+  const config = loadAuthConfig(3000);
+  sleepStorage.initialiseSleepStorage(config);
+  return module;
+};
+
+const seedSleepAccount = (overrides?: Partial<typeof BASE_ACCOUNT>) => {
+  if (!sleepStorage) {
+    throw new Error('Sleep storage not initialised');
+  }
+  const subject = overrides?.userId ?? DEFAULT_SUBJECT;
+  sleepStorage.persistSleepAccount(subject, DEFAULT_CLIENT_ID, {
+    ...BASE_ACCOUNT,
+    ...overrides,
+  });
+  const stored = sleepStorage.getSleepAccount(subject, DEFAULT_CLIENT_ID);
+  if (!stored) {
+    throw new Error('Failed to seed Sleep account for tests');
+  }
 };
 
 describe('Sleep MCP server', () => {
@@ -61,42 +111,17 @@ describe('Sleep MCP server', () => {
     resetMockClient();
   });
 
-  test('fails fast when credentials are missing', async () => {
-    vi.resetModules();
-    resetMockClient();
-    delete process.env.SLEEP_EMAIL;
-    delete process.env.SLEEP_PASSWORD;
+  test('bootstrap completes without calling Sleep API', async () => {
+    const { bootstrap } = await loadServer();
 
-    await expect(import('./server.js')).rejects.toThrow(/Missing credentials/);
-  });
-
-  test('bootstrap authenticates and caches device metadata', async () => {
-    const { bootstrap, client } = await loadServer();
-
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
-
-    await bootstrap();
-
-    expect(mockClient.authenticate).toHaveBeenCalledWith('user@example.com', 'secret');
-    expect(mockClient.getUserProfile).toHaveBeenCalledTimes(1);
-    // ensure exported client is the same mocked instance
-    expect(client).toBe(mockClient);
+    await expect(bootstrap()).resolves.toBeUndefined();
+    expect(mockClient.authenticate).not.toHaveBeenCalled();
+    expect(mockClient.getUserProfile).not.toHaveBeenCalled();
   });
 
   test('initialize handler advertises protocol version and capabilities', async () => {
     const { bootstrap, server } = await loadServer();
 
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -124,12 +149,6 @@ describe('Sleep MCP server', () => {
 
   test('tools/list exposes tool schemas', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -146,12 +165,6 @@ describe('Sleep MCP server', () => {
 
   test('resources/list exposes annotated resources', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -166,14 +179,83 @@ describe('Sleep MCP server', () => {
     expect(result.resources[1].annotations?.priority).toBeCloseTo(0.8);
   });
 
+  test('tools/call get_sleep_trends requires caller-supplied timezone', async () => {
+    const { bootstrap, server } = await loadServer();
+    mockClient.getSleepTrends.mockResolvedValueOnce([{ date: '2024-01-02' }]);
+    await bootstrap();
+    seedSleepAccount();
+
+    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+      'tools/call'
+    );
+    expect(handler).toBeDefined();
+    const result = await handler!(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'get_sleep_trends',
+          arguments: { from: '2024-01-01', to: '2024-01-07', timezone: 'America/Los_Angeles' },
+        },
+      },
+      createExtra()
+    );
+
+    expect(mockClient.getSleepTrends).toHaveBeenCalledWith(
+      '2024-01-01',
+      '2024-01-07',
+      'America/Los_Angeles'
+    );
+    expect(result.isError).not.toBe(true);
+    expect(Array.isArray(result.structuredContent)).toBe(true);
+  });
+
+  test('tools/call get_sleep_trends rejects missing timezone', async () => {
+    const { bootstrap, server } = await loadServer();
+    await bootstrap();
+
+    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+      'tools/call'
+    );
+    expect(handler).toBeDefined();
+    const result = await handler!(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'get_sleep_trends',
+          arguments: { from: '2024-01-01', to: '2024-01-07' },
+        },
+      },
+      createExtra()
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('timezone');
+  });
+
+  test('resources/read latest sleep uses default timezone', async () => {
+    const { bootstrap, server } = await loadServer();
+    mockClient.getSleepTrends.mockResolvedValueOnce([{ date: '2024-01-03' }]);
+    await bootstrap();
+    seedSleepAccount();
+
+    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+      'resources/read'
+    );
+    expect(handler).toBeDefined();
+    const result = await handler!(
+      {
+        method: 'resources/read',
+        params: { uri: 'sleep://sleep/latest' },
+      },
+      createExtra()
+    );
+
+    expect(mockClient.getSleepTrends).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'UTC');
+    expect(result.contents[0]?.mimeType).toBe('application/json');
+  });
+
   test('resources/list succeeds with authenticated request regardless of scopes', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -185,14 +267,9 @@ describe('Sleep MCP server', () => {
 
   test('tools/call set_temperature forwards arguments and returns structuredContent', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     mockClient.setHeatingLevel.mockResolvedValue(undefined);
     await bootstrap();
+    seedSleepAccount();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
       'tools/call'
@@ -203,7 +280,7 @@ describe('Sleep MCP server', () => {
         method: 'tools/call',
         params: { name: 'set_temperature', arguments: { level: 25, durationSeconds: 60 } },
       },
-      createExtra({ scopes: [] })
+      createExtra()
     );
 
     expect(mockClient.setHeatingLevel).toHaveBeenCalledWith(25, 60);
@@ -213,12 +290,6 @@ describe('Sleep MCP server', () => {
 
   test('tools/call set_temperature rejects unauthenticated requests', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -226,28 +297,24 @@ describe('Sleep MCP server', () => {
     );
     expect(handler).toBeDefined();
 
-    await expect(
-      handler!(
-        {
-          method: 'tools/call',
-          params: { name: 'set_temperature', arguments: { level: 10, durationSeconds: 30 } },
-        },
-        createExtra({ authenticated: false })
-      )
-    ).rejects.toMatchObject({ message: expect.stringContaining('Authentication required') });
+    const result = await handler!(
+      {
+        method: 'tools/call',
+        params: { name: 'set_temperature', arguments: { level: 10, durationSeconds: 30 } },
+      },
+      createExtra({ authenticated: false })
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Authentication required');
   });
 
   test('resources/read returns serialized device status', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     const statusPayload = { leftHeatingLevel: 0, rightHeatingLevel: 10 };
     mockClient.getDeviceStatus.mockResolvedValue(statusPayload);
     await bootstrap();
+    seedSleepAccount();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
       'resources/read'
@@ -265,12 +332,6 @@ describe('Sleep MCP server', () => {
 
   test('resources/read rejects unknown URIs with MCP error code', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -285,12 +346,6 @@ describe('Sleep MCP server', () => {
 
   test('prompts/get returns templated messages', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -309,12 +364,6 @@ describe('Sleep MCP server', () => {
 
   test('prompts/get rejects unauthenticated requests', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -332,12 +381,6 @@ describe('Sleep MCP server', () => {
 
   test('prompts/get rejects out-of-range days', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
@@ -355,12 +398,6 @@ describe('Sleep MCP server', () => {
 
   test('completion handler suggests common day windows', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.authenticate.mockResolvedValue(undefined);
-    mockClient.getUserProfile.mockResolvedValue({
-      email: 'user@example.com',
-      firstName: 'Test',
-      currentDevice: { id: 'device-123', side: 'right' },
-    });
     await bootstrap();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
