@@ -8,17 +8,19 @@ interface PendingRecord {
   providerId: string;
 }
 
-interface StoredCredentialRecord {
+interface StoredGrantRecord {
   providerId: string;
-  data: string;
+  encryptedProps: string;
+  refreshTokenHash?: string;
+  previousRefreshTokenHash?: string;
 }
 
 // Storage backend interface
 interface CredentialStorageBackend {
   storePending(code: string, record: PendingRecord): Promise<void>;
   consumePending(code: string): Promise<PendingRecord | undefined>;
-  persistCredential(key: string, record: StoredCredentialRecord): Promise<void>;
-  getCredential(key: string): Promise<StoredCredentialRecord | undefined>;
+  persistCredential(key: string, record: StoredGrantRecord): Promise<void>;
+  getCredential(key: string): Promise<StoredGrantRecord | undefined>;
   removeCredential(key: string): Promise<void>;
   hasCredentials(providerId?: string): Promise<boolean>;
 }
@@ -26,7 +28,7 @@ interface CredentialStorageBackend {
 // In-memory storage backend
 class InMemoryCredentialStorage implements CredentialStorageBackend {
   private pendingAuthorizations = new Map<string, PendingRecord>();
-  private credentialStore = new Map<string, StoredCredentialRecord>();
+  private credentialStore = new Map<string, StoredGrantRecord>();
 
   async storePending(code: string, record: PendingRecord): Promise<void> {
     this.pendingAuthorizations.set(code, record);
@@ -40,11 +42,11 @@ class InMemoryCredentialStorage implements CredentialStorageBackend {
     return record;
   }
 
-  async persistCredential(key: string, record: StoredCredentialRecord): Promise<void> {
+  async persistCredential(key: string, record: StoredGrantRecord): Promise<void> {
     this.credentialStore.set(key, record);
   }
 
-  async getCredential(key: string): Promise<StoredCredentialRecord | undefined> {
+  async getCredential(key: string): Promise<StoredGrantRecord | undefined> {
     return this.credentialStore.get(key);
   }
 
@@ -93,11 +95,11 @@ class KVCredentialStorage implements CredentialStorageBackend {
     return JSON.parse(data);
   }
 
-  async persistCredential(key: string, record: StoredCredentialRecord): Promise<void> {
+  async persistCredential(key: string, record: StoredGrantRecord): Promise<void> {
     await this.credentialsKV.put(this.credKey(key), JSON.stringify(record));
   }
 
-  async getCredential(key: string): Promise<StoredCredentialRecord | undefined> {
+  async getCredential(key: string): Promise<StoredGrantRecord | undefined> {
     const data = await this.credentialsKV.get(this.credKey(key));
     return data ? JSON.parse(data) : undefined;
   }
@@ -112,7 +114,7 @@ class KVCredentialStorage implements CredentialStorageBackend {
       for (const key of list.keys) {
         const data = await this.credentialsKV.get(key.name);
         if (data) {
-          const record: StoredCredentialRecord = JSON.parse(data);
+          const record: StoredGrantRecord = JSON.parse(data);
           if (record.providerId === providerId) return true;
         }
       }
@@ -123,7 +125,7 @@ class KVCredentialStorage implements CredentialStorageBackend {
   }
 }
 
-let encryptionKey: Buffer | undefined;
+let masterEncryptionKey: Buffer | undefined;
 let storageBackend: CredentialStorageBackend = new InMemoryCredentialStorage();
 
 // Initialize credential storage backend
@@ -140,14 +142,14 @@ export function initializeCredentialStorage(credentialsKV?: KVNamespace) {
   if (!raw) {
     throw new Error('AUTH_ENCRYPTION_KEY must be set to initialize credential storage');
   }
-  encryptionKey = Buffer.from(raw, 'base64');
+  masterEncryptionKey = Buffer.from(raw, 'base64');
 }
 
-function ensureEncryptionKey(): Buffer {
-  if (!encryptionKey) {
+function ensureMasterKey(): Buffer {
+  if (!masterEncryptionKey) {
     throw new Error('Credential storage not initialised');
   }
-  return encryptionKey;
+  return masterEncryptionKey;
 }
 
 function serialize(record: { iv: Buffer; ciphertext: Buffer; tag: Buffer }): string {
@@ -167,8 +169,15 @@ function deserialize(data: string): { iv: Buffer; ciphertext: Buffer; tag: Buffe
   };
 }
 
-function encrypt(payload: CredentialPayload): string {
-  const key = ensureEncryptionKey();
+function deriveGrantKey(providerId: string, subject: string, clientId: string): Buffer {
+  const masterKey = ensureMasterKey();
+  return crypto
+    .createHmac('sha256', masterKey)
+    .update(`${providerId}:${subject}:${clientId}`)
+    .digest();
+}
+
+function encryptWithKey(key: Buffer, payload: CredentialPayload): string {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const serialized = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -177,8 +186,7 @@ function encrypt(payload: CredentialPayload): string {
   return serialize({ iv, ciphertext, tag });
 }
 
-function decrypt(data: string): CredentialPayload {
-  const key = ensureEncryptionKey();
+function decryptWithKey(key: Buffer, data: string): CredentialPayload {
   const { iv, ciphertext, tag } = deserialize(data);
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
@@ -186,12 +194,16 @@ function decrypt(data: string): CredentialPayload {
   return JSON.parse(decrypted.toString('utf8')) as CredentialPayload;
 }
 
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 function accountKey(subject: string, clientId: string): string {
   return `${subject}::${clientId}`;
 }
 
 export function initialiseCredentialStorage(config: AuthConfig) {
-  encryptionKey = Buffer.from(config.encryptionKey);
+  masterEncryptionKey = Buffer.from(config.encryptionKey);
 }
 
 export async function storePendingCredential(
@@ -203,7 +215,7 @@ export async function storePendingCredential(
   const expiresAt = Date.now() + ttlMilliseconds;
   await storageBackend.storePending(code, {
     providerId,
-    data: encrypt(payload),
+    data: encryptWithKey(ensureMasterKey(), payload),
     expiresAt,
   });
 }
@@ -218,7 +230,7 @@ export async function consumePendingCredential(
   if (record.expiresAt <= Date.now()) {
     return undefined;
   }
-  return { providerId: record.providerId, credentials: decrypt(record.data) };
+  return { providerId: record.providerId, credentials: decryptWithKey(ensureMasterKey(), record.data) };
 }
 
 export async function persistCredentials(
@@ -227,10 +239,27 @@ export async function persistCredentials(
   providerId: string,
   payload: CredentialPayload
 ): Promise<void> {
-  await storageBackend.persistCredential(accountKey(subject, clientId), {
+  const key = accountKey(subject, clientId);
+  const grantKey = deriveGrantKey(providerId, subject, clientId);
+  const encryptedProps = encryptWithKey(grantKey, payload);
+  const current = await storageBackend.getCredential(key);
+  const refreshTokenHash = payload.refreshToken ? hashToken(payload.refreshToken) : undefined;
+
+  const record: StoredGrantRecord = {
     providerId,
-    data: encrypt(payload),
-  });
+    encryptedProps,
+    refreshTokenHash,
+  };
+
+  if (refreshTokenHash && current?.refreshTokenHash && current.refreshTokenHash !== refreshTokenHash) {
+    record.previousRefreshTokenHash = current.refreshTokenHash;
+  } else if (!refreshTokenHash && current?.refreshTokenHash) {
+    record.previousRefreshTokenHash = current.refreshTokenHash;
+  } else if (!record.previousRefreshTokenHash && current?.previousRefreshTokenHash) {
+    record.previousRefreshTokenHash = current.previousRefreshTokenHash;
+  }
+
+  await storageBackend.persistCredential(key, record);
 }
 
 export async function getPersistedCredentials(
@@ -242,8 +271,9 @@ export async function getPersistedCredentials(
     return undefined;
   }
   try {
-    return { providerId: record.providerId, credentials: decrypt(record.data) };
-  } catch (error) {
+    const grantKey = deriveGrantKey(record.providerId, subject, clientId);
+    return { providerId: record.providerId, credentials: decryptWithKey(grantKey, record.encryptedProps) };
+  } catch (_error) {
     await storageBackend.removeCredential(accountKey(subject, clientId));
     return undefined;
   }

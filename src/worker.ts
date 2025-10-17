@@ -49,7 +49,6 @@ async function ensureAuthInitialized(env?: any) {
       if (env.AUTH_ENCRYPTION_KEY) process.env.AUTH_ENCRYPTION_KEY = env.AUTH_ENCRYPTION_KEY;
       if (env.AUTH_SESSION_SECRET) process.env.AUTH_SESSION_SECRET = env.AUTH_SESSION_SECRET;
       if (env.AUTH_CLIENTS_JSON) process.env.AUTH_CLIENTS_JSON = env.AUTH_CLIENTS_JSON;
-      if (env.ALLOWED_ORIGINS) process.env.ALLOWED_ORIGINS = env.ALLOWED_ORIGINS;
     }
 
     authConfig = loadAuthConfig(443, sleepProvider.defaultScopes);
@@ -80,7 +79,7 @@ function toNodeRequest(request: Request): IncomingMessage {
   // Stream request body if present
   if (request.body) {
     const reader = request.body.getReader();
-    (async () => {
+    void (async () => {
       try {
         while (true) {
           const { done, value } = await reader.read();

@@ -104,12 +104,21 @@ const withSleepClient = async <T>(
     throw error;
   }
 
-  const credentials = await getProviderCredentials(context.subject, context.clientId);
-  if (!credentials) {
+  const storedCredentials = await getProviderCredentials(context.subject, context.clientId);
+  if (!storedCredentials) {
     const error = new Error('Account credentials not found. Please sign in again.');
     (error as Error & { code?: number }).code = -32603;
     (error as any).httpStatus = 401;
     throw error;
+  }
+
+  let credentials = storedCredentials;
+  if (provider.refreshCredentials) {
+    const refreshed = await provider.refreshCredentials(storedCredentials);
+    if (refreshed) {
+      credentials = refreshed;
+      await persistCredentials(context.subject, context.clientId, provider.id, refreshed);
+    }
   }
 
   // Use provider to hydrate a fully configured client
@@ -131,22 +140,6 @@ const withSleepClient = async <T>(
     subject: context.subject,
     clientId: context.clientId,
   });
-
-  // Check if tokens were refreshed and persist updates
-  const updatedTokens = client.getTokenBundle();
-  if (
-    updatedTokens.accessToken !== credentials.accessToken ||
-    updatedTokens.refreshToken !== credentials.refreshToken ||
-    updatedTokens.expiresAt !== credentials.expiresAt
-  ) {
-    await persistCredentials(context.subject, context.clientId, provider.id, {
-      ...credentials,
-      accessToken: updatedTokens.accessToken,
-      refreshToken: updatedTokens.refreshToken,
-      expiresAt: updatedTokens.expiresAt,
-    });
-  }
-
   return result;
 };
 
@@ -548,7 +541,8 @@ export async function start(): Promise<void> {
       enableDnsRebindingProtection: authConfig.dnsRebindingProtection,
     });
     await server.connect(transport);
-    httpServer = createServer(async (req, res) => {
+    httpServer = createServer((req, res) => {
+      void (async () => {
       try {
         if (!req.url) {
           res.writeHead(400).end();

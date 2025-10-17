@@ -27,4 +27,10 @@ export interface AuthenticationProvider<ClientType = unknown> {
    * Implementations should refresh tokens if required as part of client creation/use.
    */
   createClient(credentials: CredentialPayload): Promise<ClientType>;
+
+  /**
+   * Optionally refresh credentials (access tokens etc.) outside of the request cycle.
+   * Returns updated credentials if changes were made.
+   */
+  refreshCredentials?(credentials: CredentialPayload): Promise<CredentialPayload | undefined>;
 }

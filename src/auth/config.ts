@@ -116,11 +116,6 @@ export function loadAuthConfig(port: number, defaultScopes: string[] = []): Auth
   })();
   const clients = parseClients(defaultScopes);
 
-  const allowedOrigins =
-    process.env.ALLOWED_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [];
-  const allowedHosts =
-    process.env.ALLOWED_HOSTS?.split(',').map((host) => host.trim()).filter(Boolean) ?? [];
-
   return {
     issuer,
     audience: process.env.AUTH_AUDIENCE ?? 'mcp-server',
@@ -132,8 +127,8 @@ export function loadAuthConfig(port: number, defaultScopes: string[] = []): Auth
     refreshTokenTtlSeconds: Number.parseInt(process.env.REFRESH_TOKEN_TTL_SECONDS ?? '2592000', 10),
     clients,
     clockSkewSeconds: Number.parseInt(process.env.TOKEN_CLOCK_SKEW ?? '5', 10),
-    allowedOrigins,
-    allowedHosts,
+    allowedOrigins: [], // Keep flexibility but don't populate (OAuth handles security)
+    allowedHosts: [], // Keep flexibility but don't populate
     dnsRebindingProtection: process.env.MCP_ENABLE_DNS_PROTECTION === 'true',
     formTemplatePath: process.env.AUTH_FORM_TEMPLATE,
   };

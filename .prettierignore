@@ -1,0 +1,17 @@
+# Build outputs
+dist
+*.js.map
+*.d.ts
+
+# Dependencies
+node_modules
+package-lock.json
+
+# Wrangler
+.wrangler
+
+# Misc
+*.md
+*.json
+.env
+.env.*

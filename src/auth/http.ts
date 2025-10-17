@@ -151,7 +151,7 @@ function loadLoginTemplate(_config: ReturnType<typeof loadAuthConfig>) {
   let loaded: string | undefined;
   try {
     loaded = fsReadFileSync(DEFAULT_TEMPLATE_PATH, 'utf8');
-  } catch (error) {
+  } catch (_error) {
     // Template file not found, use default
   }
   loginTemplate = loaded ?? DEFAULT_LOGIN_TEMPLATE;
@@ -468,6 +468,12 @@ async function handleToken(
     if (!stored || stored.providerId !== authProvider.id) {
       throw new OAuthError(400, 'invalid_grant', 'Provider credentials missing for subject');
     }
+    if (authProvider.refreshCredentials) {
+      const updated = await authProvider.refreshCredentials(stored.credentials);
+      if (updated) {
+        await persistCredentials(result.subject, clientId, authProvider.id, updated);
+      }
+    }
     sendJson(res, result.response);
     return;
   }
@@ -612,20 +618,20 @@ export async function handleAuthRequest(
 }
 
 export function buildCorsHeaders(
-  config: ReturnType<typeof loadAuthConfig>,
+  _config: ReturnType<typeof loadAuthConfig>,
   originHeader: string | undefined
 ): Record<string, string> {
   if (!originHeader) {
     return {};
   }
-  if (config.allowedOrigins.length > 0 && !config.allowedOrigins.includes(originHeader)) {
-    throw new OAuthError(403, 'access_denied', 'Origin not allowed');
-  }
+  // Allow all origins - OAuth provides authentication security
+  // MCP clients can connect from any origin (Claude.ai, localhost, etc.)
   return {
     'Access-Control-Allow-Origin': originHeader,
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id, mcp-protocol-version',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, DELETE',
     'Access-Control-Expose-Headers': 'Mcp-Session-Id',
+    'Access-Control-Allow-Credentials': 'true',
     Vary: 'Origin',
   };
 }

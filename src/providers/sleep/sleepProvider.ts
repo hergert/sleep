@@ -32,8 +32,38 @@ export class SleepAuthProvider implements AuthenticationProvider<SleepClient> {
   }
 
   async createClient(credentials: CredentialPayload): Promise<SleepClient> {
-    const client = new SleepClient(credentials);
+    const client = new SleepClient({
+      accessToken: credentials.accessToken,
+      refreshToken: credentials.refreshToken,
+      expiresAt: credentials.expiresAt,
+      userId: credentials.userId,
+    });
     return client;
+  }
+
+  async refreshCredentials(credentials: CredentialPayload): Promise<CredentialPayload | undefined> {
+    const client = new SleepClient({
+      accessToken: credentials.accessToken,
+      refreshToken: credentials.refreshToken,
+      expiresAt: credentials.expiresAt,
+      userId: credentials.userId,
+    });
+    const bundle = await client.ensureFreshTokens();
+
+    if (
+      bundle.accessToken !== credentials.accessToken ||
+      bundle.refreshToken !== credentials.refreshToken ||
+      bundle.expiresAt !== credentials.expiresAt
+    ) {
+      return {
+        ...credentials,
+        accessToken: bundle.accessToken,
+        refreshToken: bundle.refreshToken,
+        expiresAt: bundle.expiresAt,
+      };
+    }
+
+    return undefined;
   }
 
   private buildCredentialPayload(

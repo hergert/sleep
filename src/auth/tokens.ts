@@ -91,7 +91,7 @@ function decodeJwt(token: string): { header: any; payload: any; signature: strin
     const header = JSON.parse(base64UrlDecode(encodedHeader).toString('utf8'));
     const payload = JSON.parse(base64UrlDecode(encodedPayload).toString('utf8'));
     return { header, payload, signature };
-  } catch (error) {
+  } catch (_error) {
     throw new OAuthError(401, 'invalid_token', 'Token payload invalid');
   }
 }

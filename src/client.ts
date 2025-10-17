@@ -178,6 +178,22 @@ export class SleepClient {
   }
 
   /**
+   * Ensure the token bundle is fresh, refreshing if within the buffer window.
+   * Returns the up-to-date token bundle.
+   */
+  async ensureFreshTokens(bufferMs = 60_000): Promise<SleepTokenBundle> {
+    if (!this.accessToken) {
+      throw new Error('Not authenticated. Please call authenticate() first.');
+    }
+
+    if (Date.now() >= this.expiresAt - bufferMs) {
+      await this.refreshAccessToken();
+    }
+
+    return this.getTokenBundle();
+  }
+
+  /**
    * Make an authenticated request to the API.
    */
   private async request<T>(url: string, options: RequestInit = {}): Promise<T> {

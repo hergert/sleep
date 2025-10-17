@@ -13,6 +13,7 @@ const mockClient = {
   getSleepTrends: vi.fn(),
   getDeviceStatus: vi.fn(),
   getTokenBundle: vi.fn(),
+  ensureFreshTokens: vi.fn(),
 };
 
 vi.mock('./client.js', () => ({
@@ -31,7 +32,6 @@ const DEFAULT_TOKEN_BUNDLE = {
 };
 const BASE_CREDENTIALS: CredentialPayload = {
   ...DEFAULT_TOKEN_BUNDLE,
-  email: 'user@example.com',
   metadata: {
     deviceId: DEFAULT_DEVICE_ID,
     firstName: 'Test',
@@ -45,7 +45,9 @@ const resetMockClient = () => {
   mockClient.getSleepTrends.mockReset();
   mockClient.getDeviceStatus.mockReset();
   mockClient.getTokenBundle.mockReset();
+  mockClient.ensureFreshTokens.mockReset();
   mockClient.getTokenBundle.mockImplementation(() => ({ ...DEFAULT_TOKEN_BUNDLE }));
+  mockClient.ensureFreshTokens.mockImplementation(() => ({ ...DEFAULT_TOKEN_BUNDLE }));
 };
 
 const createExtra = (options?: {
