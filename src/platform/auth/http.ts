@@ -47,51 +47,172 @@ const DEFAULT_LOGIN_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{PROVIDER_NAME}} Account Sign-In</title>
     <style>
-      body { font-family: system-ui, sans-serif; background: #f5f5f5; margin: 0; padding: 40px; }
-      main { max-width: 420px; margin: 0 auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
-      h1 { margin-top: 0; font-size: 1.5rem; }
-      label { display: block; margin-bottom: 12px; }
-      input[type="email"], input[type="password"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #d0d0d0; font-size: 1rem; }
-      .actions { display: flex; gap: 12px; margin-top: 24px; }
-      button { flex: 1; padding: 12px; font-size: 1rem; border: none; border-radius: 6px; cursor: pointer; }
-      button[type="submit"] { background: #2d5cf6; color: #fff; }
-      button.secondary { background: #e0e0e0; color: #333; }
-      .scopes { margin: 16px 0; padding-left: 20px; }
-      .scopes.none { list-style: none; padding-left: 0; color: #555; }
-      .error { color: #c00; background: #ffe5e5; padding: 8px 12px; border-radius: 6px; }
-      .consent { font-size: 0.9rem; color: #555; margin-bottom: 16px; }
+      *, *::before, *::after { box-sizing: border-box; }
+      :root { color-scheme: light; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: radial-gradient(circle at 20% 20%, #eef2ff, #e2e8f0 55%, #cbd5f5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 24px;
+        color: #0f172a;
+      }
+      main {
+        width: min(100%, 420px);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(10px);
+        padding: clamp(24px, 5vw, 40px);
+        border-radius: 16px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.5rem, 4vw, 2rem);
+        font-weight: 600;
+        color: #0f172a;
+        text-align: center;
+      }
+      .subtitle {
+        margin: 0 0 1.5rem;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: #475569;
+        text-align: center;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .scopes {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.9rem;
+        color: #334155;
+        background: #f8fafc;
+        border: 1px solid #dbeafe;
+        border-radius: 10px;
+        padding: 0.9rem 1rem;
+      }
+      .scopes li + li { margin-top: 0.35rem; }
+      .scopes.none {
+        background: #f1f5f9;
+        border-style: dashed;
+        color: #64748b;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+      label {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #1e293b;
+      }
+      input[type="email"],
+      input[type="password"] {
+        width: 100%;
+        padding: 0.75rem 0.9rem;
+        border-radius: 10px;
+        border: 1px solid #cbd5f5;
+        font-size: 1rem;
+        background: #f8fafc;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      input[type="email"]:focus,
+      input[type="password"]:focus {
+        outline: none;
+        border-color: #4f46e5;
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        background: #fff;
+      }
+      .alert {
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        font-size: 0.95rem;
+        color: #b4231a;
+        background: #fee4e2;
+        border: 1px solid #fecdca;
+      }
+      .actions {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 0.5rem;
+      }
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+      }
+      button[type="submit"] {
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: #fff;
+        box-shadow: 0 10px 25px rgba(79, 70, 229, 0.25);
+      }
+      button.secondary {
+        background: #e2e8f0;
+        color: #1e293b;
+      }
+      button:hover { transform: translateY(-1px); }
+      button:active { transform: translateY(0); box-shadow: none; }
+      .support-text {
+        font-size: 0.85rem;
+        text-align: center;
+        color: #64748b;
+        margin-top: 1rem;
+      }
+      @media (min-width: 480px) {
+        .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 479px) {
+        body { padding: 16px; }
+        main { padding: 24px; border-radius: 14px; }
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>Sign in to {{PROVIDER_NAME}}</h1>
-      <p class="consent">Client <strong>{{CLIENT_ID}}</strong> is requesting access with the following scopes:</p>
-      {{SCOPES_LIST}}
-      {{ERROR_BLOCK}}
-      <form method="post" action="/authorize">
-        <input type="hidden" name="response_type" value="code" />
-        <input type="hidden" name="client_id" value="{{CLIENT_ID}}" />
-        <input type="hidden" name="redirect_uri" value="{{REDIRECT_URI}}" />
-        <input type="hidden" name="state" value="{{STATE}}" />
-        <input type="hidden" name="scope" value="{{SCOPE_PARAM}}" />
-        <input type="hidden" name="code_challenge" value="{{CODE_CHALLENGE}}" />
-        <input type="hidden" name="code_challenge_method" value="{{CODE_CHALLENGE_METHOD}}" />
-        <input type="hidden" name="csrf_token" value="{{CSRF_TOKEN}}" />
-        <label>
-          Email
-          <input type="email" name="email" autocomplete="email" value="{{EMAIL_VALUE}}" required />
-        </label>
-        <label>
-          Password
-          <input type="password" name="password" autocomplete="current-password" required />
-        </label>
-        <div class="actions">
-          <button type="submit" name="action" value="approve">Continue</button>
-          <button type="submit" name="action" value="cancel" class="secondary">Cancel</button>
-        </div>
-      </form>
+      <p class="subtitle">Client <strong>{{CLIENT_ID}}</strong> is requesting access with the scopes listed below. Sign in to continue.</p>
+      <div class="card">
+        {{SCOPES_LIST}}
+        {{ERROR_BLOCK}}
+        <form method="post" action="/authorize">
+          <input type="hidden" name="response_type" value="code" />
+          <input type="hidden" name="client_id" value="{{CLIENT_ID}}" />
+          <input type="hidden" name="redirect_uri" value="{{REDIRECT_URI}}" />
+          <input type="hidden" name="state" value="{{STATE}}" />
+          <input type="hidden" name="scope" value="{{SCOPE_PARAM}}" />
+          <input type="hidden" name="code_challenge" value="{{CODE_CHALLENGE}}" />
+          <input type="hidden" name="code_challenge_method" value="{{CODE_CHALLENGE_METHOD}}" />
+          <input type="hidden" name="csrf_token" value="{{CSRF_TOKEN}}" />
+          <label class="field">
+            Email
+            <input type="email" name="email" autocomplete="email" value="{{EMAIL_VALUE}}" required />
+          </label>
+          <label class="field">
+            Password
+            <input type="password" name="password" autocomplete="current-password" required />
+          </label>
+          <div class="actions">
+            <button type="submit" name="action" value="approve">Continue</button>
+            <button type="submit" name="action" value="cancel" class="secondary">Cancel</button>
+          </div>
+        </form>
+        <p class="support-text">We never store your credentials. They are used only to request access from {{PROVIDER_NAME}}.</p>
+      </div>
     </main>
   </body>
 </html>`;
@@ -219,7 +340,7 @@ function renderLoginForm(
   const { clientId, scopeParam, scopes, redirectUri, state, codeChallenge, codeChallengeMethod } =
     authorizeContext;
   const errorBlock = options.error
-    ? `<p class="error">${escapeHtml(options.error)}</p>`
+    ? `<p class="alert" role="alert">${escapeHtml(options.error)}</p>`
     : '';
   const scopeList =
     scopes.length > 0

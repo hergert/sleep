@@ -1,0 +1,71 @@
+{
+  "id": "6581bdbf-0fa2-3412-9e5d-cda748231528",
+  "createdAt": "2019-02-12T01:18:09.355+0000",
+  "updatedAt": "2025-10-14T22:56:11.547426Z",
+  "deletedAt": null,
+  "email": "gert@tonal.com",
+  "firstName": "Gert",
+  "lastName": "Petja",
+  "gender": "MALE",
+  "heightInches": 75,
+  "weightPounds": 115,
+  "auth0Id": "auth0|5c621e5d990b033e3550d454",
+  "dateOfBirth": "1985-06-04",
+  "isGuestAccount": false,
+  "isDemoAccount": false,
+  "watchedSafetyVideo": true,
+  "recentMobileDevice": {
+    "deviceId": "524f50ed-dbeb-4838-930e-386e9330a952",
+    "tonalDeviceId": "5B525475-BFBD-488B-BF35-148EA6E61A75",
+    "userId": "6581bdbf-0fa2-3412-9e5d-cda748231528",
+    "createdAt": "2023-04-05T02:34:00.055377Z",
+    "updatedAt": "2025-10-17T20:12:46.791247Z",
+    "loggedIn": true,
+    "postWorkoutNotifs": true,
+    "reminderNotifs": true,
+    "productUpdateNotifs": true,
+    "socialNotifs": true,
+    "blogNotifs": true,
+    "chatbotNotifs": true,
+    "deviceModel": "iPhone18,1",
+    "osVersion": "26.1",
+    "appVersion": "7.40.0",
+    "platform": "ios"
+  },
+  "emailVerified": true,
+  "username": "gert",
+  "workoutsPerWeek": 4,
+  "tonalStatus": "installed",
+  "social": null,
+  "profileAssetID": null,
+  "mobileWorkoutsEnabled": true,
+  "accountType": "PublicUser",
+  "location": "",
+  "sharingCustomWorkoutsDisabled": false,
+  "level": "ADVANCED",
+  "goalId": "b27138bc-0624-4abb-babf-9b4be911dd5b",
+  "goals": [
+    {
+      "id": "ac0a4ae5-451a-4ef0-b50e-956e88d80931",
+      "userID": "6581bdbf-0fa2-3412-9e5d-cda748231528",
+      "goalID": "04bae524-6a6d-4ed8-bf40-e17260364649",
+      "tier": 2
+    },
+    {
+      "id": "c4145b23-86e1-4649-8eda-1f4574f5e869",
+      "userID": "6581bdbf-0fa2-3412-9e5d-cda748231528",
+      "goalID": "cbfae767-8d3d-4e7d-b682-c46935503473",
+      "tier": 3
+    },
+    {
+      "id": "0620d893-8790-4921-beaa-472a53bcd70b",
+      "userID": "6581bdbf-0fa2-3412-9e5d-cda748231528",
+      "goalID": "b27138bc-0624-4abb-babf-9b4be911dd5b",
+      "tier": 1
+    }
+  ],
+  "workoutDurationMin": 900,
+  "workoutDurationMax": 1800,
+  "updatedPreferencesAt": "2025-10-14T22:56:11.547375Z",
+  "primaryDeviceType": "Classic"
+}

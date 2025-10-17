@@ -9,12 +9,7 @@ import type {
 export class SleepAuthProvider implements AuthenticationProvider<SleepClient> {
   readonly id = 'sleep';
   readonly displayName = 'Sleep';
-  readonly defaultScopes = [
-    'sleep.read_device',
-    'sleep.read_trends',
-    'sleep.write_temperature',
-    'sleep.prompts.analyze',
-  ];
+  readonly defaultScopes = ['sleep.read', 'sleep.write'];
 
   async authenticate(email: string, password: string): Promise<AuthenticationResult> {
     const client = new SleepClient();

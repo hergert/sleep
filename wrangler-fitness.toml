@@ -1,10 +1,11 @@
-name = "sleep-mcp-server"
-main = "dist/sleep-worker.js"
+name = "fitness-mcp-server"
+main = "dist/fitness-worker.js"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 account_id = "d4ca2ffcbf66d256bb1d333e523c3a2f"
 
 # KV namespaces for persistent OAuth state storage across Worker instances
+# Using the same KV namespaces as Sleep provider for shared auth infrastructure
 [[kv_namespaces]]
 binding = "OAUTH_STATE_KV"
 id = "87dc97b9369d46c7b74be662340dbd2f"
@@ -23,7 +24,7 @@ id = "a49d2dc99f70455abb135787b55d5991"
 #   AUTH_JWT_SECRET      → HMAC secret for MCP access/refresh JWTs
 #   AUTH_CLIENTS_JSON    → JSON array describing allowed OAuth clients
 # Example:
-#   npx wrangler secret put AUTH_ENCRYPTION_KEY
-#   npx wrangler secret put AUTH_SESSION_SECRET
-#   npx wrangler secret put AUTH_JWT_SECRET
-#   npx wrangler secret put AUTH_CLIENTS_JSON
+#   npx wrangler secret put AUTH_ENCRYPTION_KEY --config wrangler-fitness.toml
+#   npx wrangler secret put AUTH_SESSION_SECRET --config wrangler-fitness.toml
+#   npx wrangler secret put AUTH_JWT_SECRET --config wrangler-fitness.toml
+#   npx wrangler secret put AUTH_CLIENTS_JSON --config wrangler-fitness.toml

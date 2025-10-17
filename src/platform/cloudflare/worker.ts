@@ -4,6 +4,7 @@ import type { IncomingMessage } from 'node:http';
 import { ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import type { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createLogger } from '../logging/logger.js';
 
 interface AuthBindings {
   provider: AuthenticationProvider;
@@ -46,6 +47,8 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
     defaultPort = 443,
   } = options;
 
+  const logger = createLogger('worker');
+
   let bootstrapped = false;
   let lastIssuer: string | undefined;
   let authConfig: AuthConfig | undefined;
@@ -54,12 +57,9 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
     const currentIssuer = env?.AUTH_ISSUER as string | undefined;
 
     if (currentIssuer !== lastIssuer) {
-      console.log('[worker] Initializing auth (issuer changed from', lastIssuer, 'to', currentIssuer, ')');
+      logger.info('Initializing auth', { previousIssuer: lastIssuer, currentIssuer });
 
       if (env) {
-        console.log('[worker] ENV keys:', Object.keys(env));
-        console.log('[worker] Has AUTH_ENCRYPTION_KEY:', !!env.AUTH_ENCRYPTION_KEY);
-
         if (env.AUTH_ISSUER) process.env.AUTH_ISSUER = String(env.AUTH_ISSUER);
         if (env.AUTH_JWT_SECRET) process.env.AUTH_JWT_SECRET = String(env.AUTH_JWT_SECRET);
         if (env.AUTH_ENCRYPTION_KEY) process.env.AUTH_ENCRYPTION_KEY = String(env.AUTH_ENCRYPTION_KEY);
@@ -74,7 +74,7 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
       await auth.initialiseAuth(authConfig, { provider: auth.provider });
       lastIssuer = currentIssuer;
 
-      console.log('[worker] Auth initialized with issuer:', authConfig.issuer);
+      logger.info('Auth initialized', { issuer: authConfig.issuer });
     }
 
     if (!authConfig) {
@@ -178,14 +178,21 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
       if (!bootstrapped && bootstrap) {
         await bootstrap();
         bootstrapped = true;
+        logger.info('Bootstrap complete');
       }
 
       const url = new URL(request.url);
 
       if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
-        return new Response(null, {
-          status: 204,
-          headers: corsHeaders,
+        const body = {
+          authorization_servers: [
+            `${config.issuer}/.well-known/oauth-authorization-server`,
+          ],
+          token_endpoint: `${config.issuer}/token`,
+        };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
@@ -220,9 +227,6 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
       }
 
       if (url.pathname.startsWith('/mcp')) {
-        if (request.method === 'GET' || request.method === 'HEAD') {
-          return new Response(null, { status: 200, headers: corsHeaders });
-        }
 
         const authHeader = request.headers.get('authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -249,13 +253,12 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
             expiresAt: verified.expiresAt,
             extra: { subject: verified.subject },
           };
-
-          console.log(
-            '[worker] MCP request - Session header:',
-            request.headers.get('mcp-session-id'),
-            'Bootstrapped:',
-            bootstrapped
-          );
+          logger.debug('Authorized MCP request', {
+            method: request.method,
+            path: url.pathname,
+            clientId: verified.clientId,
+            subject: verified.subject,
+          });
         } catch (error) {
           return new Response(
             JSON.stringify({
@@ -288,7 +291,7 @@ export function createWorkerHandler(options: WorkerOptions): WorkerExports {
 
       return new Response('Not Found', { status: 404, headers: corsHeaders });
     } catch (error) {
-      console.error('[worker] Request failed:', error);
+      logger.error('Request failed', undefined, error);
       const errorHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...corsHeaders };
       return new Response(
         JSON.stringify({
