@@ -7,6 +7,40 @@ const APP_BASE_URL = 'https://app-api.8slp.net/v1';
 const CLIENT_ID = '0894c7f33bb94800a03f1f4df13a4f38';
 const CLIENT_SECRET = 'f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76';
 
+const DEFAULT_TIMEOUT_MS = 20000;
+
+class SleepApiError extends Error {
+  constructor(message: string, public readonly status?: number) {
+    super(message);
+    this.name = 'SleepApiError';
+  }
+}
+
+/**
+ * Fetch helper with timeout to prevent Workers from hanging.
+ * Workers have a 30-second hard timeout, so we bail out at 20 seconds.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new SleepApiError(`Request timeout after ${timeoutMs}ms: ${url}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface SleepTokenBundle {
   accessToken: string;
   refreshToken: string;
@@ -54,7 +88,7 @@ export class SleepClient {
    * Stores access token, refresh token, and userId for subsequent requests.
    */
   async authenticate(email: string, password: string): Promise<SleepTokenBundle> {
-    const response = await fetch(`${AUTH_BASE_URL}/tokens`, {
+    const response = await fetchWithTimeout(`${AUTH_BASE_URL}/tokens`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -71,7 +105,10 @@ export class SleepClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+      throw new SleepApiError(
+        `Authentication failed: ${response.status} ${response.statusText}`,
+        response.status
+      );
     }
 
     const data: TokenResponse = await response.json();
@@ -92,7 +129,7 @@ export class SleepClient {
       throw new Error('No refresh token available. Please authenticate first.');
     }
 
-    const response = await fetch(`${AUTH_BASE_URL}/tokens`, {
+    const response = await fetchWithTimeout(`${AUTH_BASE_URL}/tokens`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -107,7 +144,10 @@ export class SleepClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Token refresh failed: ${response.status} ${response.statusText}`);
+      throw new SleepApiError(
+        `Token refresh failed: ${response.status} ${response.statusText}`,
+        response.status
+      );
     }
 
     const data: Omit<TokenResponse, 'userId'> = await response.json();
@@ -143,7 +183,7 @@ export class SleepClient {
   private async request<T>(url: string, options: RequestInit = {}): Promise<T> {
     await this.ensureValidToken();
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -155,7 +195,10 @@ export class SleepClient {
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      throw new SleepApiError(
+        `API request failed: ${response.status} ${response.statusText}`,
+        response.status
+      );
     }
 
     return response.json();

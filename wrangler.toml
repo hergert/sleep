@@ -1,0 +1,21 @@
+name = "sleep-mcp-server"
+main = "dist/worker.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "d4ca2ffcbf66d256bb1d333e523c3a2f"
+
+[vars]
+ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:6274,http://localhost:8765,https://playground.ai.cloudflare.com"
+
+# KV namespaces for persistent OAuth state storage across Worker instances
+[[kv_namespaces]]
+binding = "OAUTH_STATE_KV"
+id = "87dc97b9369d46c7b74be662340dbd2f"
+
+[[kv_namespaces]]
+binding = "OAUTH_CLIENTS_KV"
+id = "a5eef68d5e2b4997aed8b603b48cae14"
+
+[[kv_namespaces]]
+binding = "CREDENTIALS_KV"
+id = "a49d2dc99f70455abb135787b55d5991"

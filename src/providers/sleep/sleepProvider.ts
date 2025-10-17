@@ -27,7 +27,7 @@ export class SleepAuthProvider implements AuthenticationProvider<SleepClient> {
     }
 
     return {
-      credentials: this.buildCredentialPayload(tokens, profile.email, deviceId, profile.firstName),
+      credentials: this.buildCredentialPayload(tokens, deviceId, profile.firstName),
     };
   }
 
@@ -38,7 +38,6 @@ export class SleepAuthProvider implements AuthenticationProvider<SleepClient> {
 
   private buildCredentialPayload(
     bundle: SleepTokenBundle,
-    email: string,
     deviceId: string,
     firstName?: string
   ): CredentialPayload {
@@ -47,7 +46,6 @@ export class SleepAuthProvider implements AuthenticationProvider<SleepClient> {
       refreshToken: bundle.refreshToken,
       expiresAt: bundle.expiresAt,
       userId: bundle.userId,
-      email,
       metadata: {
         deviceId,
         firstName,

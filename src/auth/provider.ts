@@ -3,7 +3,6 @@ export interface CredentialPayload {
   refreshToken: string;
   expiresAt: number;
   userId: string;
-  email: string;
   metadata?: Record<string, unknown>;
 }
 

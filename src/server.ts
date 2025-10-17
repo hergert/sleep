@@ -16,12 +16,10 @@ import type {
   CallToolResult,
   ListPromptsResult,
   ListResourcesResult,
-  ListToolsResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { SleepClient } from './client.js';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { loadAuthConfig } from './auth/config.js';
 import {
   initialiseAuth,
@@ -106,7 +104,7 @@ const withSleepClient = async <T>(
     throw error;
   }
 
-  const credentials = getProviderCredentials(context.subject, context.clientId);
+  const credentials = await getProviderCredentials(context.subject, context.clientId);
   if (!credentials) {
     const error = new Error('Account credentials not found. Please sign in again.');
     (error as Error & { code?: number }).code = -32603;
@@ -141,7 +139,7 @@ const withSleepClient = async <T>(
     updatedTokens.refreshToken !== credentials.refreshToken ||
     updatedTokens.expiresAt !== credentials.expiresAt
   ) {
-    persistCredentials(context.subject, context.clientId, provider.id, {
+    await persistCredentials(context.subject, context.clientId, provider.id, {
       ...credentials,
       accessToken: updatedTokens.accessToken,
       refreshToken: updatedTokens.refreshToken,
@@ -174,7 +172,7 @@ const normalizeDaysWindow = (value: unknown): number => {
 };
 
 export async function bootstrap(): Promise<void> {
-  console.error('[mcp] Sleep MCP server initialised. Awaiting user authentication via OAuth.');
+  console.log('[mcp] Sleep MCP server initialised. Awaiting user authentication via OAuth.');
 }
 
 export const server = new Server(
@@ -539,7 +537,7 @@ export async function start(): Promise<void> {
       'sleep.prompts.analyze',
     ];
     const authConfig = loadAuthConfig(port, defaultScopes);
-    initialiseAuth(authConfig, { provider: sleepProvider });
+    await initialiseAuth(authConfig, { provider: sleepProvider });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       enableJsonResponse,
@@ -600,7 +598,7 @@ export async function start(): Promise<void> {
           }
           res
             .writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
-            .end(JSON.stringify({ status: 'ok', authenticated: hasPersistedCredentials(sleepProvider.id) }));
+            .end(JSON.stringify({ status: 'ok', authenticated: await hasPersistedCredentials(sleepProvider.id) }));
           return;
         }
 
@@ -683,7 +681,16 @@ export async function start(): Promise<void> {
   }
 }
 
-const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
-if (isMainModule) {
-  void start();
+// Main module detection - only for Node.js direct execution
+// In Workers, this file is imported by worker.ts, not executed directly
+if (typeof process !== 'undefined' && process.argv && import.meta.url) {
+  try {
+    const { fileURLToPath } = await import('node:url');
+    const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+    if (isMainModule) {
+      void start();
+    }
+  } catch {
+    // Not in Node.js environment
+  }
 }

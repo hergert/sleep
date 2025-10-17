@@ -7,9 +7,12 @@
     "server": "tsx src/server.ts",
     "cli": "tsx src/cli.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy": "npm run build && npx wrangler deploy",
+    "dev:worker": "npm run build && npx wrangler dev"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251011.0",
     "@types/node": "^22.0.0",
     "dotenv": "^17.2.3",
     "tsx": "^4.19.0",

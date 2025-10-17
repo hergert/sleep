@@ -96,14 +96,14 @@ function decodeJwt(token: string): { header: any; payload: any; signature: strin
   }
 }
 
-export function generateAuthorizationCode(
+export async function generateAuthorizationCode(
   config: ReturnType<typeof loadAuthConfig>,
   payload: Omit<AuthorizationCodePayload, 'code' | 'expiresAt'>
-): string {
+): Promise<string> {
   purgeExpiredAuthorizationCodes(Date.now());
   const code = randomToken(32);
   const expiresAt = Date.now() + 5 * 60 * 1000;
-  storeAuthorizationCode({
+  await storeAuthorizationCode({
     code,
     expiresAt,
     ...payload,
@@ -111,14 +111,14 @@ export function generateAuthorizationCode(
   return code;
 }
 
-export function redeemAuthorizationCode(
+export async function redeemAuthorizationCode(
   config: ReturnType<typeof loadAuthConfig>,
   code: string,
   clientId: string,
   redirectUri: string,
   codeVerifier: string
-): AuthorizationCodePayload {
-  const record = consumeAuthorizationCode(code);
+): Promise<AuthorizationCodePayload> {
+  const record = await consumeAuthorizationCode(code);
   if (!record) {
     throw new OAuthError(400, 'invalid_grant', 'Authorization code invalid or expired');
   }
@@ -139,13 +139,13 @@ export function redeemAuthorizationCode(
   return record;
 }
 
-function issueTokens(
+async function issueTokens(
   config: ReturnType<typeof loadAuthConfig>,
   subject: string,
   clientId: string,
   scopes: string[],
   issueRefreshToken: boolean
-): TokenResult {
+): Promise<TokenResult> {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expiresAt = nowSeconds + config.accessTokenTtlSeconds;
   const payload = {
@@ -172,7 +172,7 @@ function issueTokens(
   const refreshToken = randomToken(48);
   const hashed = hashToken(refreshToken);
   const refreshExpiresAt = nowSeconds + config.refreshTokenTtlSeconds;
-  storeRefreshToken({
+  await storeRefreshToken({
     hashedToken: hashed,
     clientId,
     subject,
@@ -191,14 +191,14 @@ function issueTokens(
   };
 }
 
-export function createTokenResponse(
+export async function createTokenResponse(
   config: ReturnType<typeof loadAuthConfig>,
   subject: string,
   clientId: string,
   scopes: string[],
   issueRefreshToken: boolean
-): Record<string, unknown> {
-  const result = issueTokens(config, subject, clientId, scopes, issueRefreshToken);
+): Promise<Record<string, unknown>> {
+  const result = await issueTokens(config, subject, clientId, scopes, issueRefreshToken);
   const response: Record<string, unknown> = {
     token_type: ACCESS_TOKEN_TYPE,
     access_token: result.accessToken,
@@ -211,21 +211,21 @@ export function createTokenResponse(
   return response;
 }
 
-export function refreshAccessToken(
+export async function refreshAccessToken(
   config: ReturnType<typeof loadAuthConfig>,
   token: string,
   clientId: string
-): { response: Record<string, unknown>; subject: string; scopes: string[] } {
+): Promise<{ response: Record<string, unknown>; subject: string; scopes: string[] }> {
   const hashed = hashToken(token);
-  const existing = consumeRefreshToken(hashed);
+  const existing = await consumeRefreshToken(hashed);
   if (!existing) {
     throw new OAuthError(400, 'invalid_grant', 'Refresh token invalid');
   }
   if (existing.clientId !== clientId) {
     throw new OAuthError(400, 'invalid_grant', 'Client mismatch');
   }
-  const result = issueTokens(config, existing.subject, clientId, existing.scopes, true);
-  rotateRefreshToken(hashed, {
+  const result = await issueTokens(config, existing.subject, clientId, existing.scopes, true);
+  await rotateRefreshToken(hashed, {
     hashedToken: hashToken(result.refreshToken as string),
     clientId,
     subject: existing.subject,
@@ -319,8 +319,8 @@ export function validateScopes(requested: string[], allowed: string[]): string[]
   return requested;
 }
 
-export function ensureClientSecret(clientId: string, providedSecret: string | undefined) {
-  const client = getClient(clientId);
+export async function ensureClientSecret(clientId: string, providedSecret: string | undefined) {
+  const client = await getClient(clientId);
   if (!client) {
     throw new OAuthError(401, 'invalid_client', 'Unknown client');
   }

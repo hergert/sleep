@@ -1,7 +1,5 @@
-import { URL, fileURLToPath } from 'node:url';
+import { URL } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import { loadAuthConfig } from './config.js';
 import type { OAuthClient } from './config.js';
 import {
@@ -29,8 +27,22 @@ import {
 const CSRF_TTL_MS = 10 * 60 * 1000;
 const csrfTokens = new Map<string, number>();
 
-const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_TEMPLATE_PATH = resolve(MODULE_DIR, '../templates/auth.html');
+// Template path - will be resolved at runtime if needed
+let DEFAULT_TEMPLATE_PATH: string | undefined;
+let fsReadFileSync: typeof import('node:fs').readFileSync | undefined;
+
+// Lazy load Node.js modules (only available in Node.js environment, not Workers)
+try {
+  const urlModule = await import('node:url');
+  const pathModule = await import('node:path');
+  const fsModule = await import('node:fs');
+
+  const MODULE_DIR = pathModule.dirname(urlModule.fileURLToPath(import.meta.url));
+  DEFAULT_TEMPLATE_PATH = pathModule.resolve(MODULE_DIR, '../templates/auth.html');
+  fsReadFileSync = fsModule.readFileSync;
+} catch {
+  // Running in Workers environment - no file system access
+}
 const DEFAULT_LOGIN_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -128,19 +140,19 @@ function applyTemplate(template: string, replacements: Record<string, string>): 
   return template.replace(PLACEHOLDER_PATTERN, (_match, key: string) => replacements[key] ?? '');
 }
 
-function loadLoginTemplate(config: ReturnType<typeof loadAuthConfig>) {
-  const templatePath = config.formTemplatePath
-    ? resolve(process.cwd(), config.formTemplatePath)
-    : DEFAULT_TEMPLATE_PATH;
+function loadLoginTemplate(_config: ReturnType<typeof loadAuthConfig>) {
+  // In Workers environment, file system is not available - use default template
+  if (!fsReadFileSync || !DEFAULT_TEMPLATE_PATH) {
+    loginTemplate = DEFAULT_LOGIN_TEMPLATE;
+    return;
+  }
+
+  // In Node.js environment, try to load custom template if specified
   let loaded: string | undefined;
   try {
-    loaded = readFileSync(templatePath, 'utf8');
+    loaded = fsReadFileSync(DEFAULT_TEMPLATE_PATH, 'utf8');
   } catch (error) {
-    if (config.formTemplatePath) {
-      console.warn(
-        `[mcp] Failed to load auth form template at ${templatePath}: ${(error as Error).message}`
-      );
-    }
+    // Template file not found, use default
   }
   loginTemplate = loaded ?? DEFAULT_LOGIN_TEMPLATE;
 }
@@ -156,9 +168,9 @@ interface AuthorizeContext {
   client: OAuthClient;
 }
 
-function parseAuthorizeRequest(
+async function parseAuthorizeRequest(
   params: URLSearchParams
-): AuthorizeContext {
+): Promise<AuthorizeContext> {
   const responseType = params.get('response_type');
   if (responseType !== 'code') {
     throw new OAuthError(400, 'unsupported_response_type', 'Only authorization_code supported');
@@ -171,7 +183,7 @@ function parseAuthorizeRequest(
   const codeChallenge = params.get('code_challenge') ?? '';
   const codeChallengeMethod = (params.get('code_challenge_method') ?? 'plain') as 'plain' | 'S256';
 
-  const client = getClient(clientId);
+  const client = await getClient(clientId);
   if (!client) {
     throw new OAuthError(400, 'unauthorized_client', 'Unknown client');
   }
@@ -273,13 +285,13 @@ function sendJson(res: ServerResponse, body: Record<string, unknown>, status = 2
 
 let authProvider: AuthenticationProvider | undefined;
 
-export function initialiseAuth(
+export async function initialiseAuth(
   config: ReturnType<typeof loadAuthConfig>,
   options: { provider: AuthenticationProvider }
 ) {
   authProvider = options.provider;
   for (const client of config.clients) {
-    registerClient(client);
+    await registerClient(client);
   }
   initialiseCredentialStorage(config);
   loadLoginTemplate(config);
@@ -299,7 +311,7 @@ async function handleAuthorize(
     return;
   }
 
-  const authorizeContext = parseAuthorizeRequest(params);
+  const authorizeContext = await parseAuthorizeRequest(params);
 
   if (method === 'GET') {
     const csrfToken = issueCsrfToken();
@@ -354,7 +366,7 @@ async function handleAuthorize(
       ? credentials.userId
       : randomToken(16);
 
-    const code = generateAuthorizationCode(config, {
+    const code = await generateAuthorizationCode(config, {
       clientId: authorizeContext.clientId,
       redirectUri: authorizeContext.redirectUri,
       scopes: authorizeContext.scopes,
@@ -363,7 +375,7 @@ async function handleAuthorize(
       codeChallengeMethod: authorizeContext.codeChallengeMethod,
     });
 
-    storePendingCredential(code, authProvider.id, credentials);
+    await storePendingCredential(code, authProvider.id, credentials);
 
     const redirect = new URL(authorizeContext.redirectUri);
     redirect.searchParams.set('code', code);
@@ -403,19 +415,19 @@ async function handleToken(
     const redirectUri = params.get('redirect_uri') ?? '';
     const code = params.get('code') ?? '';
     const codeVerifier = params.get('code_verifier') ?? '';
-    const client = getClient(clientId);
+    const client = await getClient(clientId);
     if (!client) {
       throw new OAuthError(401, 'invalid_client', 'Unknown client');
     }
     if (!client.isPublic) {
       const secret = params.get('client_secret') ?? basic?.clientSecret;
-      ensureClientSecret(clientId, secret);
+      await ensureClientSecret(clientId, secret);
     }
     if (!authProvider) {
       throw new OAuthError(500, 'server_error', 'Authentication provider not initialized');
     }
-    const record = redeemAuthorizationCode(config, code, clientId, redirectUri, codeVerifier);
-    const pending = consumePendingCredential(code);
+    const record = await redeemAuthorizationCode(config, code, clientId, redirectUri, codeVerifier);
+    const pending = await consumePendingCredential(code);
     if (!pending) {
       throw new OAuthError(400, 'invalid_grant', 'Provider credentials missing or expired');
     }
@@ -428,21 +440,21 @@ async function handleToken(
     if (!subjectMatches) {
       throw new OAuthError(400, 'invalid_grant', 'Subject mismatch during credential exchange');
     }
-    persistCredentials(record.subject, clientId, pending.providerId, pending.credentials);
-    const response = createTokenResponse(config, record.subject, clientId, record.scopes, true);
+    await persistCredentials(record.subject, clientId, pending.providerId, pending.credentials);
+    const response = await createTokenResponse(config, record.subject, clientId, record.scopes, true);
     sendJson(res, response);
     return;
   }
 
   if (grantType === 'refresh_token') {
     const clientId = params.get('client_id') ?? basic?.clientId ?? '';
-    const client = getClient(clientId);
+    const client = await getClient(clientId);
     if (!client) {
       throw new OAuthError(401, 'invalid_client', 'Unknown client');
     }
     const secret = params.get('client_secret') ?? basic?.clientSecret;
     if (!client.isPublic) {
-      ensureClientSecret(clientId, secret);
+      await ensureClientSecret(clientId, secret);
     }
     const refreshToken = params.get('refresh_token');
     if (!refreshToken) {
@@ -451,8 +463,8 @@ async function handleToken(
     if (!authProvider) {
       throw new OAuthError(500, 'server_error', 'Authentication provider not initialized');
     }
-    const result = refreshAccessToken(config, refreshToken, clientId);
-    const stored = getPersistedCredentials(result.subject, clientId);
+    const result = await refreshAccessToken(config, refreshToken, clientId);
+    const stored = await getPersistedCredentials(result.subject, clientId);
     if (!stored || stored.providerId !== authProvider.id) {
       throw new OAuthError(400, 'invalid_grant', 'Provider credentials missing for subject');
     }
@@ -463,15 +475,15 @@ async function handleToken(
   if (grantType === 'client_credentials') {
     const clientId = params.get('client_id') ?? basic?.clientId ?? '';
     const secret = params.get('client_secret') ?? basic?.clientSecret;
-    ensureClientSecret(clientId, secret);
-    const client = getClient(clientId)!;
+    await ensureClientSecret(clientId, secret);
+    const client = (await getClient(clientId))!;
     const scopeParam = params.get('scope') ?? client.scopes.join(' ');
     const scopes = validateScopes(scopeParam.split(' ').filter(Boolean), client.scopes);
     const subject = params.get('subject');
     if (!subject) {
       throw new OAuthError(400, 'invalid_request', 'subject parameter required for client_credentials grant');
     }
-    const response = createTokenResponse(config, subject, clientId, scopes, false);
+    const response = await createTokenResponse(config, subject, clientId, scopes, false);
     sendJson(res, response);
     return;
   }
@@ -545,7 +557,7 @@ async function handleClientRegistration(
     scopes: allowedScopes,
     isPublic: false,
   };
-  registerClient(newClient);
+  await registerClient(newClient);
   sendJson(
     res,
     {
@@ -622,14 +634,14 @@ export function buildCorsHeaders(
  * Get provider credentials for a user
  * Used by MCP server to retrieve provider-specific credentials
  */
-export function getProviderCredentials(
+export async function getProviderCredentials(
   subject: string,
   clientId: string
-): CredentialPayload | undefined {
+): Promise<CredentialPayload | undefined> {
   if (!authProvider) {
     return undefined;
   }
-  const record = getPersistedCredentials(subject, clientId);
+  const record = await getPersistedCredentials(subject, clientId);
   if (!record || record.providerId !== authProvider.id) {
     return undefined;
   }

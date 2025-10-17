@@ -104,14 +104,14 @@ const loadServer = async () => {
   const module = await import('./server.js');
   const config = loadAuthConfig(3000, provider.defaultScopes);
   credentialStorage.initialiseCredentialStorage(config);
-  authHttp.initialiseAuth(config, { provider });
+  await authHttp.initialiseAuth(config, { provider });
   if (!authHttp.getAuthProvider()) {
     throw new Error('Authentication provider failed to initialize in tests');
   }
   return module;
 };
 
-const seedSleepAccount = (overrides?: Partial<CredentialPayload> & { deviceId?: string }) => {
+const seedSleepAccount = async (overrides?: Partial<CredentialPayload> & { deviceId?: string }) => {
   if (!credentialStorage) {
     throw new Error('Credential storage not initialised');
   }
@@ -130,8 +130,8 @@ const seedSleepAccount = (overrides?: Partial<CredentialPayload> & { deviceId?: 
       deviceId: metadataDeviceIdValue ?? DEFAULT_DEVICE_ID,
     },
   };
-  credentialStorage.persistCredentials(subject, DEFAULT_CLIENT_ID, 'sleep', credentials);
-  const stored = credentialStorage.getPersistedCredentials(subject, DEFAULT_CLIENT_ID);
+  await credentialStorage.persistCredentials(subject, DEFAULT_CLIENT_ID, 'sleep', credentials);
+  const stored = await credentialStorage.getPersistedCredentials(subject, DEFAULT_CLIENT_ID);
   if (!stored) {
     throw new Error('Failed to seed Sleep account for tests');
   }
@@ -215,7 +215,7 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     mockClient.getSleepTrends.mockResolvedValueOnce([{ date: '2024-01-02' }]);
     await bootstrap();
-    seedSleepAccount();
+    await seedSleepAccount();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
       'tools/call'
@@ -268,7 +268,7 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     mockClient.getSleepTrends.mockResolvedValueOnce([{ date: '2024-01-03' }]);
     await bootstrap();
-    seedSleepAccount();
+    await seedSleepAccount();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
       'resources/read'
@@ -301,7 +301,7 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     mockClient.setHeatingLevel.mockResolvedValue(undefined);
     await bootstrap();
-    seedSleepAccount();
+    await seedSleepAccount();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
       'tools/call'
@@ -346,7 +346,7 @@ describe('Sleep MCP server', () => {
     const statusPayload = { leftHeatingLevel: 0, rightHeatingLevel: 10 };
     mockClient.getDeviceStatus.mockResolvedValue(statusPayload);
     await bootstrap();
-    seedSleepAccount();
+    await seedSleepAccount();
 
     const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
       'resources/read'
