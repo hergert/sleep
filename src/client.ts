@@ -259,6 +259,28 @@ export class SleepClient {
   }
 
   /**
+   * Get detailed sleep intervals with stages, biometrics, and timeseries data.
+   */
+  async getSleepIntervals(): Promise<unknown[]> {
+    if (!this.userId) {
+      throw new Error('User ID not available. Please authenticate first.');
+    }
+
+    const data = await this.request<{ result?: { intervals?: unknown[] }; intervals?: unknown[] }>(
+      `${CLIENT_BASE_URL}/users/${this.userId}/intervals`
+    );
+
+    // Handle different possible response structures
+    if (data.result?.intervals) {
+      return data.result.intervals;
+    }
+    if (data.intervals) {
+      return data.intervals;
+    }
+    return [];
+  }
+
+  /**
    * Get sleep trends for a date range.
    * @param from Start date in YYYY-MM-DD format
    * @param to End date in YYYY-MM-DD format

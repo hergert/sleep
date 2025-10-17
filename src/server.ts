@@ -256,6 +256,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'get_sleep_intervals',
+      title: 'Get Sleep Intervals',
+      description: 'Retrieve detailed sleep session data including stages (awake/light/deep/REM), heart rate, respiratory rate, and temperature timeseries.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+      },
+    },
+    {
       name: 'get_device_status',
       title: 'Get Device Status',
       description: 'Get the current heating status for both sides of the pod.',
@@ -319,6 +328,22 @@ server.setRequestHandler(
                 },
               ],
               structuredContent: trends as unknown as Record<string, unknown>,
+            };
+          });
+        }
+
+        case 'get_sleep_intervals': {
+          return await withSleepClient(extra, async ({ client }) => {
+            const intervals = await client.getSleepIntervals();
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(intervals, null, 2),
+                  annotations: { audience: ['assistant'] },
+                },
+              ],
+              structuredContent: { intervals } as unknown as Record<string, unknown>,
             };
           });
         }
