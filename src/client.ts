@@ -1,4 +1,10 @@
-import type { TokenResponse, UserProfile, DeviceStatus, SleepDay } from './types.js';
+import type {
+  TokenResponse,
+  UserProfile,
+  DeviceStatus,
+  SleepTrendsResponse,
+  SleepIntervalsResponse,
+} from './types.js';
 
 const AUTH_BASE_URL = 'https://auth-api.8slp.net/v1';
 const CLIENT_BASE_URL = 'https://client-api.8slp.net/v1';
@@ -261,23 +267,32 @@ export class SleepClient {
   /**
    * Get detailed sleep intervals with stages, biometrics, and timeseries data.
    */
-  async getSleepIntervals(): Promise<unknown[]> {
+  async getSleepIntervals(): Promise<SleepIntervalsResponse> {
     if (!this.userId) {
       throw new Error('User ID not available. Please authenticate first.');
     }
 
-    const data = await this.request<{ result?: { intervals?: unknown[] }; intervals?: unknown[] }>(
+    const data = await this.request<{ result?: SleepIntervalsResponse } & Partial<SleepIntervalsResponse>>(
       `${CLIENT_BASE_URL}/users/${this.userId}/intervals`
     );
 
-    // Handle different possible response structures
-    if (data.result?.intervals) {
-      return data.result.intervals;
+    const payload = data.result ?? data ?? {};
+    const intervals = Array.isArray(payload.intervals) ? payload.intervals : [];
+
+    const response: SleepIntervalsResponse = {
+      intervals,
+      ...(payload.next !== undefined ? { next: payload.next ?? null } : {}),
+    };
+
+    // Preserve any additional metadata returned by the API (e.g., paging cursors)
+    for (const [key, value] of Object.entries(payload)) {
+      if (key === 'intervals' || key === 'next') {
+        continue;
+      }
+      response[key] = value;
     }
-    if (data.intervals) {
-      return data.intervals;
-    }
-    return [];
+
+    return response;
   }
 
   /**
@@ -286,7 +301,7 @@ export class SleepClient {
    * @param to End date in YYYY-MM-DD format
    * @param tz IANA timezone (e.g., "America/New_York")
    */
-  async getSleepTrends(from: string, to: string, tz: string): Promise<SleepDay[]> {
+  async getSleepTrends(from: string, to: string, tz: string): Promise<SleepTrendsResponse> {
     if (!this.userId) {
       throw new Error('User ID not available. Please authenticate first.');
     }
@@ -300,17 +315,24 @@ export class SleepClient {
       'model-version': 'v2',
     });
 
-    const data = await this.request<{ result?: { days?: SleepDay[] }; days?: SleepDay[] }>(
+    const data = await this.request<{ result?: SleepTrendsResponse } & Partial<SleepTrendsResponse>>(
       `${CLIENT_BASE_URL}/users/${this.userId}/trends?${params}`
     );
 
-    // Handle different possible response structures
-    if (data.result?.days) {
-      return data.result.days;
+    const payload = data.result ?? data ?? {};
+    const days = Array.isArray(payload.days) ? payload.days : [];
+
+    const response: SleepTrendsResponse = {
+      days,
+    };
+
+    for (const [key, value] of Object.entries(payload)) {
+      if (key === 'days') {
+        continue;
+      }
+      response[key] = value;
     }
-    if (data.days) {
-      return data.days;
-    }
-    return [];
+
+    return response;
   }
 }

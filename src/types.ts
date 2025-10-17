@@ -50,3 +50,33 @@ export interface SleepDay {
   stages: SleepStage[];
   incomplete: boolean;
 }
+
+export interface SleepTrendsResponse {
+  days: SleepDay[];
+  avgScore?: number;
+  avgPresenceDuration?: number;
+  avgSleepDuration?: number;
+  avgDeepPercent?: number;
+  avgTnt?: number;
+  modelVersion?: string;
+  sfsCalculator?: string;
+  sleepFitnessScore?: Record<string, unknown> | null;
+  scoreBreakdown?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+// Sleep intervals types (partial to preserve shape while remaining flexible)
+export interface SleepInterval {
+  id: string;
+  ts?: string;
+  timezone?: string;
+  duration?: number;
+  stageSummary?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface SleepIntervalsResponse {
+  intervals: SleepInterval[];
+  next?: string | null;
+  [key: string]: unknown;
+}

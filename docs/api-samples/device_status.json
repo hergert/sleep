@@ -1,0 +1,185 @@
+{
+  "result": {
+    "deviceId": "4cffc7b22da0b2b29fe3af51acf17bac6bfa923a",
+    "ownerId": "c1b91bf43ce24b92b7bee42ba8f00bb6",
+    "leftHeatingLevel": -32,
+    "leftTargetHeatingLevel": 0,
+    "leftNowHeating": false,
+    "leftHeatingDuration": 0,
+    "leftSchedule": {
+      "daysUTC": {
+        "sunday": false,
+        "monday": false,
+        "tuesday": false,
+        "wednesday": false,
+        "thursday": false,
+        "friday": false,
+        "saturday": false
+      },
+      "enabled": false
+    },
+    "rightHeatingLevel": 78,
+    "rightTargetHeatingLevel": 80,
+    "rightNowHeating": true,
+    "rightHeatingDuration": 8618,
+    "rightSchedule": {
+      "daysUTC": {
+        "sunday": false,
+        "monday": false,
+        "tuesday": false,
+        "wednesday": false,
+        "thursday": false,
+        "friday": false,
+        "saturday": false
+      },
+      "enabled": false
+    },
+    "priming": false,
+    "lastLowWater": "2025-05-07T15:23:01.914Z",
+    "needsPriming": false,
+    "hasWater": true,
+    "ledBrightnessLevel": 0,
+    "sensorInfo": {
+      "label": "20600-0002-I14-A63045C3",
+      "partNumber": "20600",
+      "sku": "0002",
+      "hwRevision": "I14",
+      "serialNumber": "A63045C3",
+      "lastConnected": "2025-10-17T17:25:56.001Z",
+      "skuName": "king",
+      "model": "Pod4",
+      "version": 4,
+      "connected": true
+    },
+    "sensors": [
+      {
+        "label": "20600-0002-I14-A63045C3",
+        "partNumber": "20600",
+        "sku": "0002",
+        "hwRevision": "I14",
+        "serialNumber": "A63045C3",
+        "lastConnected": "2025-10-17T17:25:56.001Z",
+        "skuName": "king",
+        "model": "Pod4",
+        "version": 4,
+        "connected": true
+      }
+    ],
+    "expectedPeripherals": [
+      {
+        "peripheralType": "cover"
+      }
+    ],
+    "hubInfo": "20500-0004-G09-A01028BB",
+    "timezone": "America/New_York",
+    "mattressInfo": {
+      "firstUsedDate": null,
+      "eightMattress": null,
+      "brand": null
+    },
+    "firmwareCommit": "f4f0611ae486f6660da4311bb611240e3a95e674",
+    "firmwareVersion": "f4f0611",
+    "firmwareUpdated": true,
+    "firmwareUpdating": false,
+    "lastFirmwareUpdateStart": "1970-01-01T00:00:00.000+00:00",
+    "lastHeard": "2025-10-17T17:26:04.017Z",
+    "online": true,
+    "encasementType": null,
+    "leftKelvin": {
+      "targetLevels": [
+        -8,
+        1,
+        12
+      ],
+      "alarms": [],
+      "scheduleProfiles": [
+        {
+          "enabled": true,
+          "startLocalTime": "22:30:00",
+          "weekDays": {
+            "monday": true,
+            "tuesday": true,
+            "wednesday": true,
+            "thursday": true,
+            "friday": false,
+            "saturday": false,
+            "sunday": true
+          }
+        }
+      ],
+      "phases": [],
+      "level": 0,
+      "currentTargetLevel": 0,
+      "active": false,
+      "currentActivity": "off"
+    },
+    "rightKelvin": {
+      "targetLevels": [
+        -41,
+        5,
+        -5
+      ],
+      "alarms": [],
+      "scheduleProfiles": [
+        {
+          "enabled": true,
+          "startLocalTime": "23:30:00",
+          "weekDays": {
+            "monday": false,
+            "tuesday": false,
+            "wednesday": false,
+            "thursday": true,
+            "friday": true,
+            "saturday": false,
+            "sunday": false
+          }
+        },
+        {
+          "enabled": true,
+          "startLocalTime": "22:30:00",
+          "weekDays": {
+            "monday": true,
+            "tuesday": true,
+            "wednesday": true,
+            "thursday": false,
+            "friday": false,
+            "saturday": true,
+            "sunday": true
+          }
+        }
+      ],
+      "phases": [],
+      "level": 80,
+      "currentTargetLevel": 80,
+      "active": true,
+      "currentActivity": "schedule"
+    },
+    "features": [
+      "warming",
+      "cooling",
+      "vibration",
+      "tapControls",
+      "alarms"
+    ],
+    "leftUserId": "c1b91bf43ce24b92b7bee42ba8f00bb6",
+    "leftUserInvitationPending": false,
+    "rightUserId": "84ab550d498149f0930a8ba23e9e1470",
+    "rightUserInvitationPending": false,
+    "modelString": "Pod 4",
+    "hubSerial": "A01028BB",
+    "wifiInfo": {
+      "signalStrength": -66,
+      "ssid": "Albanet",
+      "ipAddr": "192.168.1.172",
+      "macAddr": "70:B6:51:01:3F:A9",
+      "asOf": "2025-10-17T17:26:04.017Z"
+    },
+    "awaySides": {
+      "leftUserId": "c1b91bf43ce24b92b7bee42ba8f00bb6",
+      "rightUserId": "84ab550d498149f0930a8ba23e9e1470"
+    },
+    "lastPrime": "2025-05-16T01:10:30.000Z",
+    "isTemperatureAvailable": true,
+    "deactivated": {}
+  }
+}

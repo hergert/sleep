@@ -11,6 +11,7 @@ const mockClient = {
   getUserProfile: vi.fn(),
   setHeatingLevel: vi.fn(),
   getSleepTrends: vi.fn(),
+  getSleepIntervals: vi.fn(),
   getDeviceStatus: vi.fn(),
   getTokenBundle: vi.fn(),
   ensureFreshTokens: vi.fn(),
@@ -43,6 +44,7 @@ const resetMockClient = () => {
   mockClient.getUserProfile.mockReset();
   mockClient.setHeatingLevel.mockReset();
   mockClient.getSleepTrends.mockReset();
+  mockClient.getSleepIntervals.mockReset();
   mockClient.getDeviceStatus.mockReset();
   mockClient.getTokenBundle.mockReset();
   mockClient.ensureFreshTokens.mockReset();
@@ -191,7 +193,7 @@ describe('Sleep MCP server', () => {
     expect(handler).toBeDefined();
     const result = (await handler!({ method: 'tools/list', params: {} }, createExtra())) as any;
 
-    expect(result.tools).toHaveLength(3);
+    expect(result.tools).toHaveLength(4);
     const setTemperature = result.tools.find((tool: { name: string }) => tool.name === 'set_temperature');
     expect(setTemperature?.inputSchema.required).toContain('level');
     expect(setTemperature?.outputSchema.required).toEqual(['status', 'level', 'durationSeconds']);
@@ -215,7 +217,24 @@ describe('Sleep MCP server', () => {
 
   test('tools/call get_sleep_trends requires caller-supplied timezone', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.getSleepTrends.mockResolvedValueOnce([{ date: '2024-01-02' }]);
+    mockClient.getSleepTrends.mockResolvedValueOnce({
+      days: [
+        {
+          day: '2024-01-02',
+          score: 85,
+          sleepDuration: 25_000,
+          latencyDuration: 600,
+          outOfBedDuration: 300,
+          restlessSleep: 0,
+          lightSleepPercentage: 0.5,
+          deepSleepPercentage: 0.3,
+          remSleepPercentage: 0.2,
+          stages: [],
+          incomplete: false,
+        },
+      ],
+      avgScore: 85,
+    });
     await bootstrap();
     await seedSleepAccount();
 
@@ -240,7 +259,7 @@ describe('Sleep MCP server', () => {
       'America/Los_Angeles'
     );
     expect(result.isError).not.toBe(true);
-    expect(Array.isArray(result.structuredContent)).toBe(true);
+    expect(result.structuredContent?.days).toHaveLength(1);
   });
 
   test('tools/call get_sleep_trends rejects missing timezone', async () => {
@@ -268,7 +287,23 @@ describe('Sleep MCP server', () => {
 
   test('resources/read latest sleep uses default timezone', async () => {
     const { bootstrap, server } = await loadServer();
-    mockClient.getSleepTrends.mockResolvedValueOnce([{ date: '2024-01-03' }]);
+    mockClient.getSleepTrends.mockResolvedValueOnce({
+      days: [
+        {
+          day: '2024-01-03',
+          score: 80,
+          sleepDuration: 24_000,
+          latencyDuration: 500,
+          outOfBedDuration: 200,
+          restlessSleep: 0,
+          lightSleepPercentage: 0.5,
+          deepSleepPercentage: 0.25,
+          remSleepPercentage: 0.25,
+          stages: [],
+          incomplete: false,
+        },
+      ],
+    });
     await bootstrap();
     await seedSleepAccount();
 

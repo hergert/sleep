@@ -198,7 +198,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'set_temperature',
       title: 'Set Pod Temperature',
-      description: 'Adjust the pod temperature for your side.',
+      description: 'Sets the heating/cooling level for the user\'s side of the Sleep pod. Use for temperature adjustments to improve comfort. Inputs: level (-100 to 100, where negative=cooling, positive=heating), optional durationSeconds (0=indefinite). Outputs: Confirmation with applied level and duration.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -208,13 +208,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'number',
             minimum: -100,
             maximum: 100,
-            description: 'Heating level from -100 (cooling) to 100 (heating).',
+            description: 'Heating level from -100 (maximum cooling) to 100 (maximum heating). 0 is neutral/off.',
           },
           durationSeconds: {
             type: 'number',
             minimum: 0,
             default: 0,
-            description: 'Duration in seconds (0 keeps the level until changed).',
+            description: 'Duration in seconds to maintain this level. 0 (default) keeps the level indefinitely until manually changed.',
           },
         },
       },
@@ -231,8 +231,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'get_sleep_trends',
-      title: 'Get Sleep Trends',
-      description: 'Retrieve historical sleep metrics for a date range.',
+      title: 'Fetch Historical Sleep Metrics',
+      description: 'Retrieves nightly sleep metrics (sleep score, total duration, sleep stages breakdown, heart rate, respiratory rate, restlessness) for a specified date range. Use for trend analysis and identifying patterns over 1-14 days. Inputs: from/to dates (YYYY-MM-DD, ISO format), timezone (IANA format, e.g., "America/New_York"). Outputs: Summary object with daily entries, averages, and scoring breakdowns.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -241,36 +241,199 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           from: {
             type: 'string',
             format: 'date',
-            description: 'Inclusive start date (YYYY-MM-DD).',
+            description: 'Inclusive start date in YYYY-MM-DD format (e.g., "2025-01-01"). Must be within last 90 days.',
           },
           to: {
             type: 'string',
             format: 'date',
-            description: 'Inclusive end date (YYYY-MM-DD).',
+            description: 'Inclusive end date in YYYY-MM-DD format (e.g., "2025-01-07"). Must be >= from date.',
           },
           timezone: {
             type: 'string',
-            description: 'IANA timezone used to aggregate daily metrics.',
+            description: 'IANA timezone identifier (e.g., "America/New_York", "Europe/London", "UTC") used to aggregate daily metrics. Determines how overnight sessions are grouped into calendar days.',
+          },
+        },
+      },
+      outputSchema: {
+        type: 'object',
+        required: ['days', 'avgScore', 'avgSleepDuration'],
+        properties: {
+          days: {
+            type: 'array',
+            description: 'Per-day sleep metrics for the requested window',
+            items: {
+              type: 'object',
+              required: ['day', 'score', 'sleepDuration', 'stages', 'incomplete'],
+              properties: {
+                day: { type: 'string', format: 'date', description: 'Date in YYYY-MM-DD format' },
+                score: { type: 'number', description: 'Overall sleep quality score (0-100)' },
+                sleepDuration: { type: 'number', description: 'Total sleep duration in seconds' },
+                latencyDuration: { type: 'number', description: 'Time to fall asleep in seconds' },
+                outOfBedDuration: { type: 'number', description: 'Time spent out of bed in seconds' },
+                restlessSleep: { type: 'number', description: 'Restlessness metric' },
+                lightSleepPercentage: { type: 'number', description: 'Percentage of light sleep (0-100)' },
+                deepSleepPercentage: { type: 'number', description: 'Percentage of deep sleep (0-100)' },
+                remSleepPercentage: { type: 'number', description: 'Percentage of REM sleep (0-100)' },
+                stages: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['stage', 'duration'],
+                    properties: {
+                      stage: { type: 'string', description: 'Sleep stage name' },
+                      duration: { type: 'number', description: 'Duration in seconds' },
+                    },
+                  },
+                },
+                incomplete: { type: 'boolean', description: 'Whether the sleep session is incomplete/ongoing' },
+              },
+            },
+          },
+          avgScore: { type: 'number', description: 'Average sleep score across the selected window' },
+          avgPresenceDuration: { type: 'number', description: 'Average time in bed in seconds' },
+          avgSleepDuration: { type: 'number', description: 'Average sleep duration in seconds' },
+          avgDeepPercent: { type: 'number', description: 'Average percentage of deep sleep (0-1)' },
+          avgTnt: { type: 'number', description: 'Average tosses and turns (TNT) count' },
+          modelVersion: { type: 'string', description: 'Model version used for calculations' },
+          sfsCalculator: { type: 'string', description: 'Sleep fitness score calculator version' },
+          sleepFitnessScore: {
+            type: 'object',
+            description: 'Breakdown of the overall sleep fitness score components',
+            properties: {},
+            additionalProperties: true,
+          },
+          scoreBreakdown: {
+            type: 'object',
+            description: 'Detailed scoring categories such as total sleep, recovery, routine',
+            properties: {},
+            additionalProperties: true,
+          },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      name: 'get_sleep_intervals',
+      title: 'Fetch Detailed Sleep Sessions',
+      description: 'Retrieves granular, timestamped sleep session data including sleep stage transitions (awake/light/deep/REM), heart rate timeseries, respiratory rate timeseries, and pod temperature readings. Use for in-depth analysis of specific nights or investigating sleep quality issues. Inputs: None (fetches recent sessions). Outputs: Array of sleep intervals with minute-by-minute stage data, biometric readings, and environmental conditions.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: 'object',
+        required: ['intervals'],
+        additionalProperties: true,
+        properties: {
+          intervals: {
+            type: 'array',
+            description: 'Sleep intervals with detailed stage and biometric data',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Unique interval ID' },
+                ts: { type: 'string', format: 'date-time', description: 'Interval timestamp (ISO 8601)' },
+                timezone: { type: 'string', description: 'IANA timezone identifier' },
+                duration: { type: 'number', description: 'Total interval duration in seconds' },
+                stages: {
+                  type: 'array',
+                  description: 'Array of sleep stage segments with duration in seconds',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      stage: { type: 'string' },
+                      duration: { type: 'number' },
+                    },
+                    additionalProperties: true,
+                  },
+                },
+                stageSummary: {
+                  type: 'object',
+                  description: 'Aggregated stage durations and percentages',
+                  additionalProperties: true,
+                },
+              },
+              additionalProperties: true,
+            },
+          },
+          next: {
+            type: ['string', 'null'],
+            description: 'Pagination cursor to fetch the next set of intervals (if provided by the API).',
           },
         },
       },
     },
     {
-      name: 'get_sleep_intervals',
-      title: 'Get Sleep Intervals',
-      description: 'Retrieve detailed sleep session data including stages (awake/light/deep/REM), heart rate, respiratory rate, and temperature timeseries.',
+      name: 'get_device_status',
+      title: 'Check Current Device Status',
+      description: 'Retrieves real-time pod status including current heating/cooling levels, target levels, active timers, and power state for both sides of the mattress. Use to verify applied temperature settings or diagnose device issues. Inputs: None. Outputs: Object with leftSide/rightSide heating levels, targets, timer remaining, and device online status.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
       },
-    },
-    {
-      name: 'get_device_status',
-      title: 'Get Device Status',
-      description: 'Get the current heating status for both sides of the pod.',
-      inputSchema: {
+      outputSchema: {
         type: 'object',
-        additionalProperties: false,
+        required: [
+          'leftHeatingLevel',
+          'rightHeatingLevel',
+          'leftTargetHeatingLevel',
+          'rightTargetHeatingLevel',
+          'leftNowHeating',
+          'rightNowHeating',
+          'leftHeatingDuration',
+          'rightHeatingDuration',
+        ],
+        properties: {
+          deviceId: { type: 'string', description: 'Unique device identifier' },
+          ownerId: { type: 'string', description: 'User ID of device owner' },
+          leftHeatingLevel: {
+            type: 'number',
+            minimum: -100,
+            maximum: 100,
+            description: 'Current left side heating level (-100=max cooling, 100=max heating)',
+          },
+          rightHeatingLevel: {
+            type: 'number',
+            minimum: -100,
+            maximum: 100,
+            description: 'Current right side heating level (-100=max cooling, 100=max heating)',
+          },
+          leftTargetHeatingLevel: {
+            type: 'number',
+            minimum: -100,
+            maximum: 100,
+            description: 'Target left side heating level',
+          },
+          rightTargetHeatingLevel: {
+            type: 'number',
+            minimum: -100,
+            maximum: 100,
+            description: 'Target right side heating level',
+          },
+          leftNowHeating: {
+            type: 'boolean',
+            description: 'Whether left side is actively heating/cooling',
+          },
+          rightNowHeating: {
+            type: 'boolean',
+            description: 'Whether right side is actively heating/cooling',
+          },
+          leftHeatingDuration: {
+            type: 'number',
+            description: 'Remaining duration for left side timer (seconds, 0=indefinite)',
+          },
+          rightHeatingDuration: {
+            type: 'number',
+            description: 'Remaining duration for right side timer (seconds, 0=indefinite)',
+          },
+          priming: { type: 'boolean', description: 'Whether device is in priming mode' },
+          needsPriming: { type: 'boolean', description: 'Whether device needs priming' },
+          hasWater: { type: 'boolean', description: 'Whether device has sufficient water' },
+          ledBrightnessLevel: {
+            type: 'number',
+            description: 'LED brightness level (0=off)',
+          },
+        },
       },
     },
   ],
@@ -343,7 +506,7 @@ server.setRequestHandler(
                   annotations: { audience: ['assistant'] },
                 },
               ],
-              structuredContent: { intervals } as unknown as Record<string, unknown>,
+              structuredContent: intervals as unknown as Record<string, unknown>,
             };
           });
         }
@@ -394,7 +557,7 @@ server.setRequestHandler(
           uri: 'sleep://device/status',
           name: 'device-status',
           title: 'Current Device Status',
-          description: 'Heating levels, targets, and timers for the active pod.',
+          description: 'Real-time heating levels, targets, and timers for the active pod.',
           mimeType: 'application/json',
           annotations: {
             audience: ['assistant', 'user'],
@@ -406,12 +569,36 @@ server.setRequestHandler(
           uri: 'sleep://sleep/latest',
           name: 'latest-sleep',
           title: 'Latest Sleep Session',
-          description: 'Most recent nightly sleep metrics snapshot.',
+          description: 'Most recent nightly sleep metrics snapshot (score, stages, biometrics).',
           mimeType: 'application/json',
           annotations: {
             audience: ['assistant'],
             priority: 0.8,
             lastModified: new Date().toISOString(),
+          },
+        },
+      ],
+      resourceTemplates: [
+        {
+          uriTemplate: 'sleep://sleep/{date}',
+          name: 'sleep-by-date',
+          title: 'Sleep Session by Date',
+          description: 'Nightly sleep metrics for a specific date. Use for fetching historical data without tool calls. Date must be in YYYY-MM-DD format (e.g., "2025-01-15").',
+          mimeType: 'application/json',
+          annotations: {
+            audience: ['assistant'],
+            priority: 0.7,
+          },
+        },
+        {
+          uriTemplate: 'sleep://trends/{from}/{to}',
+          name: 'trends-by-range',
+          title: 'Sleep Trends by Date Range',
+          description: 'Aggregated sleep trends for a date range. Parameters: from and to dates in YYYY-MM-DD format. Uses server default timezone. Efficient for fetching multiple days of data.',
+          mimeType: 'application/json',
+          annotations: {
+            audience: ['assistant'],
+            priority: 0.75,
           },
         },
       ],
@@ -439,13 +626,52 @@ server.setRequestHandler(ReadResourceRequestSchema, async ({ params }, extra) =>
 
   if (uri === 'sleep://sleep/latest') {
     return withSleepClient(extra, async ({ client }) => {
-      const [latest] = await client.getSleepTrends(isoDateDaysAgo(7), isoDateDaysAgo(0), TIMEZONE);
+      const trends = await client.getSleepTrends(isoDateDaysAgo(7), isoDateDaysAgo(0), TIMEZONE);
+      const latest = Array.isArray(trends.days) ? trends.days[0] ?? null : null;
       return {
         contents: [
           {
             uri,
             mimeType: 'application/json',
             text: JSON.stringify(latest ?? null),
+          },
+        ],
+      };
+    });
+  }
+
+  // Resource template: sleep://sleep/{date}
+  const sleepByDateMatch = uri.match(/^sleep:\/\/sleep\/([0-9]{4}-[0-9]{2}-[0-9]{2})$/);
+  if (sleepByDateMatch) {
+    const date = sleepByDateMatch[1];
+    return withSleepClient(extra, async ({ client }) => {
+      const trends = await client.getSleepTrends(date, date, TIMEZONE);
+      const dayData = Array.isArray(trends.days) ? trends.days[0] ?? null : null;
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(dayData),
+          },
+        ],
+      };
+    });
+  }
+
+  // Resource template: sleep://trends/{from}/{to}
+  const trendsRangeMatch = uri.match(/^sleep:\/\/trends\/([0-9]{4}-[0-9]{2}-[0-9]{2})\/([0-9]{4}-[0-9]{2}-[0-9]{2})$/);
+  if (trendsRangeMatch) {
+    const from = trendsRangeMatch[1];
+    const to = trendsRangeMatch[2];
+    return withSleepClient(extra, async ({ client }) => {
+      const trends = await client.getSleepTrends(from, to, TIMEZONE);
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(trends),
           },
         ],
       };
@@ -515,6 +741,7 @@ server.setRequestHandler(GetPromptRequestSchema, async ({ params }, extra) => {
 });
 
 server.setRequestHandler(CompleteRequestSchema, async ({ params }, extra) => {
+  // Prompt argument completion
   if (params.ref.type === 'ref/prompt' && params.ref.name === 'analyze_sleep') {
     if (params.argument.name !== 'days') {
       return { completion: { values: [], total: 0 } };
@@ -533,6 +760,49 @@ server.setRequestHandler(CompleteRequestSchema, async ({ params }, extra) => {
         total: values.length,
       },
     };
+  }
+
+  // Resource template argument completion (uses ref/resource with template URIs)
+  if (params.ref.type === 'ref/resource') {
+    ensureAuthenticated(extra);
+
+    // Completion for sleep://sleep/{date} template
+    const sleepByDateMatch = params.ref.uri?.match(/^sleep:\/\/sleep\/\{date\}$/);
+    if (sleepByDateMatch && params.argument.name === 'date') {
+      const query = params.argument.value?.toString() ?? '';
+      // Suggest recent dates (last 7 days)
+      const suggestions: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        suggestions.push(isoDateDaysAgo(i));
+      }
+
+      const values = suggestions.filter((date) => date.startsWith(query));
+      return {
+        completion: {
+          values,
+          total: values.length,
+        },
+      };
+    }
+
+    // Completion for sleep://trends/{from}/{to} template
+    const trendsRangeMatch = params.ref.uri?.match(/^sleep:\/\/trends\/\{from\}\/\{to\}$/);
+    if (trendsRangeMatch && (params.argument.name === 'from' || params.argument.name === 'to')) {
+      const query = params.argument.value?.toString() ?? '';
+      // Suggest common date ranges
+      const suggestions: string[] = [];
+      for (let i = 0; i < 14; i++) {
+        suggestions.push(isoDateDaysAgo(i));
+      }
+
+      const values = suggestions.filter((date) => date.startsWith(query));
+      return {
+        completion: {
+          values,
+          total: values.length,
+        },
+      };
+    }
   }
 
   return { completion: { values: [], total: 0 } };
@@ -557,7 +827,7 @@ export async function start(): Promise<void> {
     const authConfig = loadAuthConfig(port, defaultScopes);
     await initialiseAuth(authConfig, { provider: sleepProvider });
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
+      sessionIdGenerator: undefined,
       enableJsonResponse,
       allowedHosts:
         authConfig.allowedHosts.length > 0 ? authConfig.allowedHosts : undefined,

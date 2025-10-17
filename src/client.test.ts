@@ -92,10 +92,11 @@ describeSuite('SleepClient', () => {
 
     const trends = await client.getSleepTrends(from, to, 'America/New_York');
 
-    expect(Array.isArray(trends)).toBe(true);
+    expect(trends).toBeDefined();
+    expect(Array.isArray(trends.days)).toBe(true);
     // May be empty if no sleep data in range, which is valid
-    if (trends.length > 0) {
-      const day = trends[0];
+    if (trends.days.length > 0) {
+      const day = trends.days[0];
       expect(day.day).toBeDefined();
       expect(typeof day.score).toBe('number');
       expect(typeof day.sleepDuration).toBe('number');

@@ -1,0 +1,306 @@
+{
+  "days": [
+    {
+      "day": "2025-10-17",
+      "presenceDuration": 35670,
+      "sleepDuration": 28140,
+      "remDuration": 8850,
+      "remPercent": 0.31,
+      "lightDuration": 14070,
+      "deepDuration": 5220,
+      "deepPercent": 0.19,
+      "snoreDuration": 240,
+      "heavySnoreDuration": 0,
+      "snorePercent": 1,
+      "heavySnorePercent": 0,
+      "mitigationEvents": 0,
+      "stoppedSnoringEvents": 0,
+      "reducedSnoringEvents": 0,
+      "ineffectiveExtendedEvents": 0,
+      "cancelledEvents": 0,
+      "elevationDuration": 0,
+      "theoreticalSnorePercent": 1,
+      "snoringReductionPercent": 0,
+      "elevationAutopilotAdjustmentCount": 0,
+      "presenceStart": "2025-10-17T04:11:00.000Z",
+      "presenceEnd": "2025-10-17T13:01:30.000Z",
+      "sleepStart": "2025-10-17T04:20:00.000Z",
+      "sleepEnd": "2025-10-17T12:13:00.000Z",
+      "tnt": 67,
+      "mainSessionId": "1760670420",
+      "sessionIds": [
+        "1760670420"
+      ],
+      "incomplete": false,
+      "tags": [],
+      "hotFlash": {
+        "summary": {
+          "sessionCount": 0
+        },
+        "sessions": []
+      },
+      "performanceWindows": {
+        "isAvailable": true,
+        "configuration": {
+          "chronotypeBaselineDays": 70,
+          "chronotypeMinimumCalibrationDays": 14,
+          "chronotypeFullyCalibratedDays": 30,
+          "socialJetlagMinSessions": 14,
+          "performanceWindowsBaselineDays": 28,
+          "performanceWindowsMinimumCalibrationDays": 14
+        },
+        "performanceWindowStats": {
+          "currentSleepStart": "00:20:00",
+          "currentSleepMidpoint": "04:16:30",
+          "currentSleepEnd": "08:13:00",
+          "currentTotalSleepTimeSeconds": 28140,
+          "bedtimeBaseline": "23:42:22",
+          "sleepStartBaseline": "23:57:16",
+          "sleepEndBaseline": "07:06:49",
+          "sleepMidpointBaseline": "03:31:03",
+          "wasoBaseline": 0.05978599471155872,
+          "totalSleepTimeSecondsBaseline": 25088.571428571428,
+          "deepSleepSecondsBaseline": 4551.428571428572
+        },
+        "chronotype": {
+          "source": "pod",
+          "chronoClass": "late",
+          "isCalibrating": false,
+          "calibrationDays": 0,
+          "internalChronotypeDate": "2025-09-17T00:00:00.000Z"
+        },
+        "socialJetlag": {
+          "socialJetlagSeconds": -4059,
+          "avgWeekdaySleepMidpoint": "04:03:14",
+          "avgWeekendSleepMidpoint": "02:55:35"
+        },
+        "exerciseWindow": {
+          "activeRuleName": "default",
+          "exerciseWindowStart": "16:13:00",
+          "exerciseWindowMidpoint": "17:43:00",
+          "exerciseWindowEnd": "19:13:00"
+        },
+        "cognitiveWindow": {
+          "activeRuleName": "sleep_start_1hr",
+          "cognitiveWindowStart": "11:31:03",
+          "cognitiveWindowMidpoint": "14:01:03",
+          "cognitiveWindowEnd": "16:31:03"
+        }
+      },
+      "score": 89,
+      "sleepQualityScore": {
+        "total": 83,
+        "weight": 0.5,
+        "weighted": 41,
+        "sleepDurationSeconds": {
+          "current": 28140,
+          "lowerRange": 28800,
+          "upperRange": 86400,
+          "lowerBound": 28800,
+          "upperBound": 86400,
+          "average": 25089,
+          "stdDev": 5310.68,
+          "score": 100,
+          "weight": 0.4,
+          "weighted": 40,
+          "available": true,
+          "inclusive7DayAverage": 26010
+        },
+        "hrv": {
+          "upperRange": 87.6,
+          "lowerRange": 71.7,
+          "upperBound": 9999,
+          "lowerBound": 71.7,
+          "current": 25.1,
+          "average": 79.6,
+          "score": 0,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 45.5
+        },
+        "respiratoryRate": {
+          "upperRange": 14.8,
+          "lowerRange": 11.8,
+          "upperBound": 14.8,
+          "lowerBound": 11.8,
+          "current": 13.2,
+          "average": 13.3,
+          "score": 0,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 13
+        },
+        "heartRate": {
+          "upperRange": 49.1,
+          "lowerRange": 45.3,
+          "upperBound": 49.1,
+          "lowerBound": -9999,
+          "current": 59,
+          "average": 47.2,
+          "score": 0,
+          "weight": 0.1,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 54.4
+        },
+        "deep": {
+          "current": 5220,
+          "lowerRange": 4200,
+          "upperRange": 9999,
+          "lowerBound": 4200,
+          "upperBound": 9999,
+          "average": 4551,
+          "stdDev": 1225.31,
+          "score": 99,
+          "weight": 0.06,
+          "weighted": 6,
+          "available": true,
+          "inclusive7DayAverage": 4294.3
+        },
+        "rem": {
+          "current": 8850,
+          "lowerRange": 5400,
+          "upperRange": 9999,
+          "lowerBound": 5400,
+          "upperBound": 9999,
+          "average": 6360,
+          "stdDev": 2259.86,
+          "score": 105,
+          "weight": 0.19,
+          "weighted": 20,
+          "available": true,
+          "inclusive7DayAverage": 7144.3
+        },
+        "waso": {
+          "current": 0.008456659619450317,
+          "lowerRange": 0,
+          "upperRange": 0,
+          "lowerBound": 0,
+          "upperBound": 0,
+          "average": 0,
+          "stdDev": 0.07,
+          "score": 103,
+          "weight": 0.15,
+          "weighted": 15,
+          "available": true,
+          "inclusive7DayAverage": 0.1
+        },
+        "snoringDurationSeconds": {
+          "current": 240,
+          "lowerRange": -249.1372055933699,
+          "upperRange": 775.2910517472161,
+          "lowerBound": -249.1372055933699,
+          "upperBound": 775.2910517472161,
+          "average": 263,
+          "stdDev": 341.48,
+          "score": 0,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 462.9
+        },
+        "heavySnoringDurationSeconds": {
+          "current": 0,
+          "lowerRange": -66.22844602443236,
+          "upperRange": 140.0745998705862,
+          "lowerBound": -66.22844602443236,
+          "upperBound": 140.0745998705862,
+          "average": 37,
+          "stdDev": 68.77,
+          "score": 0,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 68.6
+        },
+        "sleepDebt": {
+          "firstSleepDate": "2025-10-03",
+          "dailySleepDebtSeconds": -2100,
+          "baselineSleepDurationSeconds": 26040,
+          "isCalibrating": false
+        }
+      },
+      "sleepRoutineScore": {
+        "total": 80,
+        "weight": 0.1,
+        "weighted": 8,
+        "wakeupConsistency": {
+          "current": "08:13:00",
+          "lowerRange": "07:01:41",
+          "upperRange": "07:21:41",
+          "lowerBound": "07:01:41",
+          "upperBound": "07:21:41",
+          "average": "07:11:41",
+          "score": 74,
+          "weight": 0.05,
+          "weighted": 4,
+          "available": true,
+          "inclusive7DayAverage": "08:06:50"
+        },
+        "sleepStartConsistency": {
+          "current": "00:20:00",
+          "lowerRange": "23:48:50",
+          "upperRange": "00:08:50",
+          "lowerBound": "23:48:50",
+          "upperBound": "00:08:50",
+          "average": "23:58:50",
+          "score": 86,
+          "weight": 0.05,
+          "weighted": 4,
+          "available": true,
+          "inclusive7DayAverage": "00:39:39"
+        },
+        "bedtimeConsistency": {
+          "current": "00:11:00",
+          "lowerRange": "23:34:19",
+          "upperRange": "23:54:19",
+          "lowerBound": "23:34:19",
+          "upperBound": "23:54:19",
+          "average": "23:44:19",
+          "score": 79,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": "00:21:33"
+        },
+        "latencyAsleepSeconds": {
+          "current": 540,
+          "lowerRange": 0,
+          "upperRange": 9999,
+          "lowerBound": 0,
+          "upperBound": 9999,
+          "average": 893.5714285714286,
+          "stdDev": 779.52,
+          "score": 0,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 1084.2857142857142
+        },
+        "latencyOutSeconds": {
+          "current": 2910,
+          "lowerRange": 0,
+          "upperRange": 9999,
+          "lowerBound": 0,
+          "upperBound": 9999,
+          "average": 1812.857142857143,
+          "stdDev": 1523.71,
+          "score": 0,
+          "weight": 0,
+          "weighted": 0,
+          "available": true,
+          "inclusive7DayAverage": 1397.142857142857
+        }
+      }
+    }
+  ],
+  "avgScore": 89,
+  "avgPresenceDuration": 35670,
+  "avgSleepDuration": 28140,
+  "avgDeepPercent": 0.19,
+  "avgTnt": 67,
+  "modelVersion": "v2",
+  "sfsCalculator": "v3.2"
+}

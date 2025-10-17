@@ -1,70 +1,38 @@
 #!/usr/bin/env node
 import { config } from 'dotenv';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { SleepClient } from './client.js';
 
 // Load .env file
 config();
 
-const AUTH_BASE_URL = 'https://auth-api.8slp.net/v1';
-const CLIENT_BASE_URL = 'https://client-api.8slp.net/v1';
-const APP_BASE_URL = 'https://app-api.8slp.net/v1';
+// Sleep client instance
+let client: SleepClient | null = null;
 
-const CLIENT_ID = '0894c7f33bb94800a03f1f4df13a4f38';
-const CLIENT_SECRET = 'f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76';
-
-// Store auth state
-let accessToken: string | null = null;
-let userId: string | null = null;
+// Optional file output
+let outputFile: string | null = null;
 
 /**
- * Pretty print response with headers and body
+ * Pretty print response data
  */
-function printResponse(url: string, response: Response, body: any) {
+function printResponse(description: string, body: any) {
   console.log('\n' + '='.repeat(80));
-  console.log(`REQUEST: ${response.url}`);
+  console.log(`📦 ${description}`);
   console.log('='.repeat(80));
-
-  console.log('\n📍 URL:', url);
-  console.log('🔄 Status:', response.status, response.statusText);
-
-  console.log('\n📋 RESPONSE HEADERS:');
-  console.log('-'.repeat(80));
-  response.headers.forEach((value, key) => {
-    console.log(`  ${key}: ${value}`);
-  });
-
-  console.log('\n📦 RESPONSE BODY:');
-  console.log('-'.repeat(80));
   console.log(JSON.stringify(body, null, 2));
   console.log('\n' + '='.repeat(80) + '\n');
-}
 
-/**
- * Make authenticated request with full inspection
- */
-async function inspectRequest(url: string, options: RequestInit = {}): Promise<any> {
-  if (!options.headers) {
-    options.headers = {};
+  // Save to file if --file flag was provided
+  if (outputFile) {
+    try {
+      mkdirSync(dirname(outputFile), { recursive: true });
+      writeFileSync(outputFile, JSON.stringify(body, null, 2));
+      console.log(`✅ Saved response to: ${outputFile}\n`);
+    } catch (error) {
+      console.error(`❌ Failed to save file: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-
-  if (accessToken) {
-    (options.headers as any)['Authorization'] = `Bearer ${accessToken}`;
-  }
-
-  (options.headers as any)['Content-Type'] = 'application/json';
-  (options.headers as any)['Accept'] = 'application/json';
-  (options.headers as any)['User-Agent'] = 'Android App';
-
-  const response = await fetch(url, options);
-  const body = await response.json();
-
-  printResponse(url, response, body);
-
-  if (!response.ok) {
-    console.error('❌ Request failed!');
-    return null;
-  }
-
-  return body;
 }
 
 /**
@@ -81,114 +49,107 @@ async function authenticate() {
 
   console.log('🔐 Authenticating...');
 
-  const body = await inspectRequest(`${AUTH_BASE_URL}/tokens`, {
-    method: 'POST',
-    body: JSON.stringify({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      grant_type: 'password',
-      username: email,
-      password: password,
-    }),
-  });
-
-  if (body) {
-    accessToken = body.access_token;
-    userId = body.userId;
+  try {
+    client = new SleepClient();
+    const tokens = await client.authenticate(email, password);
     console.log('✅ Authenticated successfully!');
-    console.log('👤 User ID:', userId);
+    console.log('👤 User ID:', tokens.userId);
+  } catch (error) {
+    console.error('❌ Authentication failed:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
   }
+}
+
+/**
+ * Ensure client is authenticated
+ */
+function ensureAuthenticated() {
+  if (!client) {
+    console.error('❌ Must authenticate first');
+    process.exit(1);
+  }
+  return client;
 }
 
 /**
  * Get user profile
  */
 async function getUserProfile() {
+  const c = ensureAuthenticated();
   console.log('👤 Fetching user profile...');
-  return await inspectRequest(`${CLIENT_BASE_URL}/users/me`);
+  try {
+    const profile = await c.getUserProfile();
+    printResponse('User Profile', { user: profile });
+    return profile;
+  } catch (error) {
+    console.error('❌ Failed:', error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
  * Get device status
  */
 async function getDeviceStatus(deviceId: string) {
+  const c = ensureAuthenticated();
   console.log('🛏️  Fetching device status...');
-  return await inspectRequest(`${CLIENT_BASE_URL}/devices/${deviceId}`);
-}
-
-/**
- * Get temperature settings
- */
-async function getTemperatureSettings() {
-  if (!userId) {
-    console.error('❌ Must authenticate first');
-    return;
+  try {
+    const status = await c.getDeviceStatus(deviceId);
+    printResponse('Device Status', { result: status });
+    return status;
+  } catch (error) {
+    console.error('❌ Failed:', error instanceof Error ? error.message : String(error));
   }
-  console.log('🌡️  Fetching temperature settings...');
-  return await inspectRequest(`${APP_BASE_URL}/users/${userId}/temperature`);
 }
 
 /**
  * Set heating level
  */
 async function setHeatingLevel(level: number, duration: number) {
-  if (!userId) {
-    console.error('❌ Must authenticate first');
-    return;
-  }
+  const c = ensureAuthenticated();
   console.log(`🔥 Setting heating level to ${level} for ${duration}s...`);
-  return await inspectRequest(`${APP_BASE_URL}/users/${userId}/temperature`, {
-    method: 'PUT',
-    body: JSON.stringify({
-      timeBased: {
-        level,
-        durationSeconds: duration,
-      },
-      currentLevel: level,
-    }),
-  });
+  try {
+    await c.setHeatingLevel(level, duration);
+    console.log('✅ Temperature set successfully!');
+  } catch (error) {
+    console.error('❌ Failed:', error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
  * Get sleep trends
  */
 async function getSleepTrends(from: string, to: string, tz: string = 'America/New_York') {
-  if (!userId) {
-    console.error('❌ Must authenticate first');
-    return;
-  }
+  const c = ensureAuthenticated();
   console.log(`😴 Fetching sleep trends from ${from} to ${to}...`);
-  const params = new URLSearchParams({
-    tz,
-    from,
-    to,
-    'include-main': 'false',
-    'include-all-sessions': 'false',
-    'model-version': 'v2',
-  });
-  return await inspectRequest(`${CLIENT_BASE_URL}/users/${userId}/trends?${params}`);
+  try {
+    const trends = await c.getSleepTrends(from, to, tz);
+    printResponse('Sleep Trends', trends);
+    return trends;
+  } catch (error) {
+    console.error('❌ Failed:', error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
  * Get sleep intervals (detailed session data)
  */
 async function getSleepIntervals() {
-  if (!userId) {
-    console.error('❌ Must authenticate first');
-    return;
-  }
+  const c = ensureAuthenticated();
   console.log('📊 Fetching sleep intervals...');
-  return await inspectRequest(`${CLIENT_BASE_URL}/users/${userId}/intervals`);
+  try {
+    const intervals = await c.getSleepIntervals();
+    printResponse('Sleep Intervals', intervals);
+    return intervals;
+  } catch (error) {
+    console.error('❌ Failed:', error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
  * Get sleep trends for this week (Monday to today)
  */
 async function getTrendsThisWeek(tz: string = 'America/New_York') {
-  if (!userId) {
-    console.error('❌ Must authenticate first');
-    return;
-  }
+  ensureAuthenticated();
 
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
@@ -215,14 +176,16 @@ async function showMenu() {
   console.log('  1. auth              - Authenticate with sleep API');
   console.log('  2. profile           - Get user profile');
   console.log('  3. device <id>       - Get device status');
-  console.log('  4. temp              - Get temperature settings');
-  console.log('  5. set-temp <level> <duration> - Set heating level (-100 to 100, duration in seconds)');
-  console.log('  6. trends <from> <to> [tz] - Get sleep trends (dates: YYYY-MM-DD)');
-  console.log('  7. trends-week [tz]  - Get sleep trends for this week (Monday to today)');
-  console.log('  8. intervals         - Get detailed sleep intervals');
-  console.log('  9. quick             - Quick exploration (auth + profile + device + temp + trends)');
-  console.log('  10. help             - Show this menu');
-  console.log('  0. exit              - Exit\n');
+  console.log('  4. set-temp <level> <duration> - Set heating level (-100 to 100, duration in seconds)');
+  console.log('  5. trends <from> <to> [tz] - Get sleep trends (dates: YYYY-MM-DD)');
+  console.log('  6. trends-week [tz]  - Get sleep trends for this week (Monday to today)');
+  console.log('  7. intervals         - Get detailed sleep intervals');
+  console.log('  8. quick             - Quick exploration (auth + profile + device + trends)');
+  console.log('  9. help              - Show this menu');
+  console.log('  0. exit              - Exit');
+  console.log('\nOptions:');
+  console.log('  --file <path>        - Save JSON response to file');
+  console.log('  💡 Example: npm run cli trends 2025-01-01 2025-01-07 --file docs/api-samples/trends.json\n');
 }
 
 /**
@@ -233,20 +196,17 @@ async function quickExplore() {
 
   // Auth
   await authenticate();
-  if (!accessToken) return;
+  if (!client) return;
 
   // Profile
   const profile = await getUserProfile();
   if (!profile) return;
 
-  const deviceId = profile.user?.currentDevice?.id;
+  const deviceId = profile.currentDevice?.id;
   if (deviceId) {
     // Device status
     await getDeviceStatus(deviceId);
   }
-
-  // Temperature settings
-  await getTemperatureSettings();
 
   // Sleep trends (last 7 days)
   const today = new Date();
@@ -263,7 +223,15 @@ async function quickExplore() {
  * Main CLI handler
  */
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
+
+  // Check for --file flag
+  const fileIndex = args.indexOf('--file');
+  if (fileIndex !== -1 && fileIndex + 1 < args.length) {
+    outputFile = args[fileIndex + 1];
+    // Remove --file and its value from args
+    args.splice(fileIndex, 2);
+  }
 
   if (args.length === 0) {
     await showMenu();
@@ -280,7 +248,7 @@ async function main() {
 
     case '2':
     case 'profile':
-      if (!accessToken) {
+      if (!client) {
         await authenticate();
       }
       await getUserProfile();
@@ -288,7 +256,7 @@ async function main() {
 
     case '3':
     case 'device':
-      if (!accessToken) {
+      if (!client) {
         await authenticate();
       }
       if (!args[1]) {
@@ -300,16 +268,8 @@ async function main() {
       break;
 
     case '4':
-    case 'temp':
-      if (!accessToken) {
-        await authenticate();
-      }
-      await getTemperatureSettings();
-      break;
-
-    case '5':
     case 'set-temp':
-      if (!accessToken) {
+      if (!client) {
         await authenticate();
       }
       if (!args[1] || !args[2]) {
@@ -320,9 +280,9 @@ async function main() {
       await setHeatingLevel(parseInt(args[1]), parseInt(args[2]));
       break;
 
-    case '6':
+    case '5':
     case 'trends':
-      if (!accessToken) {
+      if (!client) {
         await authenticate();
       }
       if (!args[1] || !args[2]) {
@@ -333,28 +293,28 @@ async function main() {
       await getSleepTrends(args[1], args[2], args[3]);
       break;
 
-    case '7':
+    case '6':
     case 'trends-week':
-      if (!accessToken) {
+      if (!client) {
         await authenticate();
       }
       await getTrendsThisWeek(args[1]);
       break;
 
-    case '8':
+    case '7':
     case 'intervals':
-      if (!accessToken) {
+      if (!client) {
         await authenticate();
       }
       await getSleepIntervals();
       break;
 
-    case '9':
+    case '8':
     case 'quick':
       await quickExplore();
       break;
 
-    case '10':
+    case '9':
     case 'help':
       await showMenu();
       break;

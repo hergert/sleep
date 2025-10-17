@@ -15,20 +15,10 @@ import { Readable } from 'node:stream';
 // Initialize at module level (but config will be loaded per-request to access secrets)
 const sleepProvider = new SleepAuthProvider();
 
-// Create transport once
-let sessionInitialized = false;
-
+// Create transport once (stateless – no session ID exchange)
 const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => {
-    return crypto.randomUUID();
-  },
+  sessionIdGenerator: undefined,
   enableJsonResponse: true,
-  onsessioninitialized: (sessionId) => {
-    sessionInitialized = true;
-  },
-  onsessionclosed: () => {
-    sessionInitialized = false;
-  },
 });
 
 // Connect server to transport
@@ -224,8 +214,6 @@ export default {
 
       // MCP endpoints require authentication
       if (url.pathname.startsWith('/mcp')) {
-        const sessionIdHeader = request.headers.get('mcp-session-id');
-
         if (request.method === 'GET' || request.method === 'HEAD') {
           // Streamable HTTP clients poll GET for notifications. Respond 200 with CORS headers.
           return new Response(null, { status: 200, headers: corsHeaders });
@@ -257,9 +245,12 @@ export default {
             extra: { subject: verified.subject },
           };
 
-          // Log session ID from request
-          const sessionId = request.headers.get('mcp-session-id');
-          console.log('[worker] MCP request - Session ID:', sessionId, 'Bootstrapped:', bootstrapped);
+          console.log(
+            '[worker] MCP request - Session header:',
+            request.headers.get('mcp-session-id'),
+            'Bootstrapped:',
+            bootstrapped
+          );
         } catch (error) {
           return new Response(
             JSON.stringify({
@@ -271,27 +262,6 @@ export default {
               headers: {
                 'Content-Type': 'application/json',
                 'WWW-Authenticate': 'Bearer error="invalid_token"',
-                ...corsHeaders,
-              },
-            }
-          );
-        }
-
-        if (!sessionInitialized && sessionIdHeader) {
-          console.log('[worker] Request with MCP session before initialization; signaling client to retry handshake.');
-          return new Response(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              error: {
-                code: -32001,
-                message: 'Session not found',
-              },
-              id: null,
-            }),
-            {
-              status: 404,
-              headers: {
-                'Content-Type': 'application/json',
                 ...corsHeaders,
               },
             }
