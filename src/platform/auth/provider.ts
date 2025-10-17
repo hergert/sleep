@@ -15,6 +15,8 @@ export interface AuthenticationProvider<ClientType = unknown> {
   id: string;
   /** Human-friendly name shown to users in the login UI. */
   displayName: string;
+  /** Default OAuth scopes for this provider. */
+  defaultScopes?: string[];
 
   /**
    * Authenticate using provider-specific credentials (email/password, etc.).

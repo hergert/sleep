@@ -1,10 +1,10 @@
-import { SleepClient } from '../../client.js';
-import type { SleepTokenBundle } from '../../client.js';
+import { SleepClient } from './client.js';
+import type { SleepTokenBundle } from './client.js';
 import type {
   AuthenticationProvider,
   AuthenticationResult,
   CredentialPayload,
-} from '../../auth/provider.js';
+} from '../../platform/auth/provider.js';
 
 export class SleepAuthProvider implements AuthenticationProvider<SleepClient> {
   readonly id = 'sleep';

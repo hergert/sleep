@@ -2,7 +2,7 @@
 import { config } from 'dotenv';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { SleepClient } from './client.js';
+import { SleepClient } from './providers/sleep/client.js';
 
 // Load .env file
 config();
@@ -223,7 +223,7 @@ async function quickExplore() {
  * Main CLI handler
  */
 async function main() {
-  let args = process.argv.slice(2);
+  const args = process.argv.slice(2);
 
   // Check for --file flag
   const fileIndex = args.indexOf('--file');

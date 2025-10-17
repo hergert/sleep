@@ -1,8 +1,5 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { SleepClient } from './client.js';
-
-// Integration tests requiring real sleep credentials
-// Set EMAIL and PASSWORD env vars (or CLIENT_TEST_EMAIL/CLIENT_TEST_PASSWORD) to run tests
+import { SleepClient } from '../client.js';
 
 const email = process.env.CLIENT_TEST_EMAIL;
 const password = process.env.CLIENT_TEST_PASSWORD;
@@ -22,7 +19,6 @@ describeSuite('SleepClient', () => {
 
   test('authenticate with real credentials', async () => {
     await client.authenticate(email!, password!);
-    // If we get here without throwing, authentication succeeded
     expect(true).toBe(true);
   });
 
@@ -41,7 +37,6 @@ describeSuite('SleepClient', () => {
     expect(profile.currentDevice).toBeDefined();
     expect(profile.currentDevice.id).toBeDefined();
 
-    // Store deviceId for subsequent tests
     deviceId = profile.currentDevice.id;
   });
 
@@ -68,11 +63,7 @@ describeSuite('SleepClient', () => {
       await client.authenticate(email!, password!);
     }
 
-    // Set a mild heating level for 1 hour
-    // Using 0 as a neutral level to avoid disrupting actual sleep
     await client.setHeatingLevel(0, 3600);
-
-    // If we get here without throwing, the request succeeded
     expect(true).toBe(true);
   });
 
@@ -82,7 +73,6 @@ describeSuite('SleepClient', () => {
       await client.authenticate(email!, password!);
     }
 
-    // Get last 7 days of sleep data
     const today = new Date();
     const weekAgo = new Date(today);
     weekAgo.setDate(today.getDate() - 7);
@@ -94,7 +84,6 @@ describeSuite('SleepClient', () => {
 
     expect(trends).toBeDefined();
     expect(Array.isArray(trends.days)).toBe(true);
-    // May be empty if no sleep data in range, which is valid
     if (trends.days.length > 0) {
       const day = trends.days[0];
       expect(day.day).toBeDefined();
