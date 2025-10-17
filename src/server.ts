@@ -543,118 +543,119 @@ export async function start(): Promise<void> {
     await server.connect(transport);
     httpServer = createServer((req, res) => {
       void (async () => {
-      try {
-        if (!req.url) {
-          res.writeHead(400).end();
-          return;
-        }
-
-        const url = new URL(req.url, authConfig.issuer);
-
-        // Apply CORS headers early for all OAuth and MCP endpoints
-        let corsHeaders: Record<string, string> = {};
-        const isOAuthPath = ['/authorize', '/token', '/jwks.json', '/.well-known/oauth-authorization-server', '/register'].includes(url.pathname);
-        if (req.method === 'OPTIONS' || url.pathname.startsWith('/mcp') || isOAuthPath) {
-          try {
-            corsHeaders = buildCorsHeaders(authConfig, req.headers.origin);
-          } catch (error) {
-            if (error instanceof OAuthError) {
-              res
-                .writeHead(error.status, { 'Content-Type': 'application/json' })
-                .end(
-                  JSON.stringify({
-                    error: error.error,
-                    error_description: error.description,
-                  })
-                );
-              return;
-            }
-            throw error;
-          }
-        }
-        for (const [header, value] of Object.entries(corsHeaders)) {
-          res.setHeader(header, value);
-        }
-
-        if (req.method === 'OPTIONS') {
-          res.writeHead(204).end();
-          return;
-        }
-
-        if (await handleAuthRequest(authConfig, req, res, url)) {
-          return;
-        }
-
-        if (url.pathname === '/health') {
-          if (req.method && req.method !== 'GET') {
-            res.writeHead(405).end();
+        try {
+          if (!req.url) {
+            res.writeHead(400).end();
             return;
           }
-          res
-            .writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
-            .end(JSON.stringify({ status: 'ok', authenticated: await hasPersistedCredentials(sleepProvider.id) }));
-          return;
-        }
 
-        if (!url.pathname.startsWith('/mcp')) {
-          res.writeHead(404).end();
-          return;
-        }
+          const url = new URL(req.url, authConfig.issuer);
 
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-          res
-            .writeHead(401, {
-              'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Bearer realm="sleep-mcp-server"',
-              ...corsHeaders,
-            })
-            .end(JSON.stringify({ error: 'invalid_token', error_description: 'Bearer token required' }));
-          return;
-        }
+          // Apply CORS headers early for all OAuth and MCP endpoints
+          let corsHeaders: Record<string, string> = {};
+          const isOAuthPath = ['/authorize', '/token', '/jwks.json', '/.well-known/oauth-authorization-server', '/register'].includes(url.pathname);
+          if (req.method === 'OPTIONS' || url.pathname.startsWith('/mcp') || isOAuthPath) {
+            try {
+              corsHeaders = buildCorsHeaders(authConfig, req.headers.origin);
+            } catch (error) {
+              if (error instanceof OAuthError) {
+                res
+                  .writeHead(error.status, { 'Content-Type': 'application/json' })
+                  .end(
+                    JSON.stringify({
+                      error: error.error,
+                      error_description: error.description,
+                    })
+                  );
+                return;
+              }
+              throw error;
+            }
+          }
+          for (const [header, value] of Object.entries(corsHeaders)) {
+            res.setHeader(header, value);
+          }
 
-        const token = authHeader.slice('Bearer '.length);
-        let verified;
-        try {
-          verified = verifyAccessToken(authConfig, token);
-        } catch (error) {
-          res
-            .writeHead(401, {
-              'Content-Type': 'application/json',
-              'WWW-Authenticate': 'Bearer error="invalid_token"',
-              ...corsHeaders,
-            })
-            .end(
-              JSON.stringify({
-                error: 'invalid_token',
-                error_description: (error as Error).message,
+          if (req.method === 'OPTIONS') {
+            res.writeHead(204).end();
+            return;
+          }
+
+          if (await handleAuthRequest(authConfig, req, res, url)) {
+            return;
+          }
+
+          if (url.pathname === '/health') {
+            if (req.method && req.method !== 'GET') {
+              res.writeHead(405).end();
+              return;
+            }
+            res
+              .writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+              .end(JSON.stringify({ status: 'ok', authenticated: await hasPersistedCredentials(sleepProvider.id) }));
+            return;
+          }
+
+          if (!url.pathname.startsWith('/mcp')) {
+            res.writeHead(404).end();
+            return;
+          }
+
+          const authHeader = req.headers.authorization;
+          if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            res
+              .writeHead(401, {
+                'Content-Type': 'application/json',
+                'WWW-Authenticate': 'Bearer realm="sleep-mcp-server"',
+                ...corsHeaders,
               })
-            );
-          return;
-        }
+              .end(JSON.stringify({ error: 'invalid_token', error_description: 'Bearer token required' }));
+            return;
+          }
 
-        (req as any).auth = {
-          token,
-          clientId: verified.clientId,
-          scopes: verified.scopes,
-          expiresAt: verified.expiresAt,
-          extra: { subject: verified.subject },
-        };
+          const token = authHeader.slice('Bearer '.length);
+          let verified;
+          try {
+            verified = verifyAccessToken(authConfig, token);
+          } catch (error) {
+            res
+              .writeHead(401, {
+                'Content-Type': 'application/json',
+                'WWW-Authenticate': 'Bearer error="invalid_token"',
+                ...corsHeaders,
+              })
+              .end(
+                JSON.stringify({
+                  error: 'invalid_token',
+                  error_description: (error as Error).message,
+                })
+              );
+            return;
+          }
 
-        await transport.handleRequest(req as any, res);
-      } catch (error) {
-        console.error('[mcp] Failed to handle HTTP request:', error);
-        if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
+          (req as any).auth = {
+            token,
+            clientId: verified.clientId,
+            scopes: verified.scopes,
+            expiresAt: verified.expiresAt,
+            extra: { subject: verified.subject },
+          };
+
+          await transport.handleRequest(req as any, res);
+        } catch (error) {
+          console.error('[mcp] Failed to handle HTTP request:', error);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+          }
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32603, message: 'Internal error' },
+              id: null,
+            })
+          );
         }
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32603, message: 'Internal error' },
-            id: null,
-          })
-        );
-      }
+      })();
     });
     httpServer.listen(port, () => {
       console.error(`[mcp] Streamable HTTP transport listening on http://localhost:${port}/mcp`);

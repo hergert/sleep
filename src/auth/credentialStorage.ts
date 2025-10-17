@@ -273,7 +273,7 @@ export async function getPersistedCredentials(
   try {
     const grantKey = deriveGrantKey(record.providerId, subject, clientId);
     return { providerId: record.providerId, credentials: decryptWithKey(grantKey, record.encryptedProps) };
-  } catch (_error) {
+  } catch {
     await storageBackend.removeCredential(accountKey(subject, clientId));
     return undefined;
   }

@@ -158,11 +158,11 @@ describe('Sleep MCP server', () => {
 
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'initialize'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'initialize',
         params: {
@@ -172,7 +172,7 @@ describe('Sleep MCP server', () => {
         },
       },
       createExtra()
-    );
+    )) as any;
 
     expect(result.protocolVersion).toBe('2025-06-18');
     expect(result.capabilities.tools).toEqual({ listChanged: false });
@@ -185,11 +185,11 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'tools/list'
     );
     expect(handler).toBeDefined();
-    const result = await handler!({ method: 'tools/list', params: {} }, createExtra());
+    const result = (await handler!({ method: 'tools/list', params: {} }, createExtra())) as any;
 
     expect(result.tools).toHaveLength(3);
     const setTemperature = result.tools.find((tool: { name: string }) => tool.name === 'set_temperature');
@@ -201,11 +201,11 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'resources/list'
     );
     expect(handler).toBeDefined();
-    const result = await handler!({ method: 'resources/list', params: {} }, createExtra());
+    const result = (await handler!({ method: 'resources/list', params: {} }, createExtra())) as any;
 
     expect(result.resources).toHaveLength(2);
     expect(result.resources[0].uri).toBe('sleep://device/status');
@@ -219,11 +219,11 @@ describe('Sleep MCP server', () => {
     await bootstrap();
     await seedSleepAccount();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'tools/call'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'tools/call',
         params: {
@@ -232,7 +232,7 @@ describe('Sleep MCP server', () => {
         },
       },
       createExtra()
-    );
+    )) as any;
 
     expect(mockClient.getSleepTrends).toHaveBeenCalledWith(
       '2024-01-01',
@@ -247,11 +247,11 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'tools/call'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'tools/call',
         params: {
@@ -260,7 +260,7 @@ describe('Sleep MCP server', () => {
         },
       },
       createExtra()
-    );
+    )) as any;
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('timezone');
@@ -272,17 +272,17 @@ describe('Sleep MCP server', () => {
     await bootstrap();
     await seedSleepAccount();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'resources/read'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'resources/read',
         params: { uri: 'sleep://sleep/latest' },
       },
       createExtra()
-    );
+    )) as any;
 
     expect(mockClient.getSleepTrends).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'UTC');
     expect(result.contents[0]?.mimeType).toBe('application/json');
@@ -292,10 +292,10 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'resources/list'
     );
-    const result = await handler!({ method: 'resources/list', params: {} }, createExtra({ scopes: [] }));
+    const result = (await handler!({ method: 'resources/list', params: {} }, createExtra({ scopes: [] }))) as any;
     expect(result.resources).toHaveLength(2);
   });
 
@@ -305,17 +305,17 @@ describe('Sleep MCP server', () => {
     await bootstrap();
     await seedSleepAccount();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'tools/call'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'tools/call',
         params: { name: 'set_temperature', arguments: { level: 25, durationSeconds: 60 } },
       },
       createExtra()
-    );
+    )) as any;
 
     expect(mockClient.setHeatingLevel).toHaveBeenCalledWith(25, 60);
     expect(result.structuredContent).toEqual({ status: 'ok', level: 25, durationSeconds: 60 });
@@ -326,18 +326,18 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'tools/call'
     );
     expect(handler).toBeDefined();
 
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'tools/call',
         params: { name: 'set_temperature', arguments: { level: 10, durationSeconds: 30 } },
       },
       createExtra({ authenticated: false })
-    );
+    )) as any;
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('Authentication required');
@@ -350,14 +350,14 @@ describe('Sleep MCP server', () => {
     await bootstrap();
     await seedSleepAccount();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'resources/read'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       { method: 'resources/read', params: { uri: 'sleep://device/status' } },
       createExtra()
-    );
+    )) as any;
 
     expect(mockClient.getDeviceStatus).toHaveBeenCalledWith('device-123');
     expect(result.contents[0].mimeType).toBe('application/json');
@@ -368,7 +368,7 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'resources/read'
     );
     expect(handler).toBeDefined();
@@ -382,14 +382,14 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'prompts/get'
     );
     expect(handler).toBeDefined();
-    const result = await handler!(
+    const result = (await handler!(
       { method: 'prompts/get', params: { name: 'analyze_sleep', arguments: { days: '5' } } },
       createExtra({ scopes: [] })
-    );
+    )) as any;
 
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0].content.text).toMatch(/last 5 days/);
@@ -400,7 +400,7 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'prompts/get'
     );
     expect(handler).toBeDefined();
@@ -417,7 +417,7 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'prompts/get'
     );
     expect(handler).toBeDefined();
@@ -434,12 +434,12 @@ describe('Sleep MCP server', () => {
     const { bootstrap, server } = await loadServer();
     await bootstrap();
 
-    const handler = (server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers.get(
+    const handler = (server as unknown as { _requestHandlers: Map<string, (request: unknown, extra?: unknown) => Promise<unknown>> })._requestHandlers.get(
       'completion/complete'
     );
     expect(handler).toBeDefined();
 
-    const result = await handler!(
+    const result = (await handler!(
       {
         method: 'completion/complete',
         params: {
@@ -448,7 +448,7 @@ describe('Sleep MCP server', () => {
         },
       },
       createExtra()
-    );
+    )) as any;
 
     expect(result.completion.values).toEqual(['10', '14']);
     expect(result.completion.total).toBe(2);

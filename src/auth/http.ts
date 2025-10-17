@@ -151,7 +151,7 @@ function loadLoginTemplate(_config: ReturnType<typeof loadAuthConfig>) {
   let loaded: string | undefined;
   try {
     loaded = fsReadFileSync(DEFAULT_TEMPLATE_PATH, 'utf8');
-  } catch (_error) {
+  } catch {
     // Template file not found, use default
   }
   loginTemplate = loaded ?? DEFAULT_LOGIN_TEMPLATE;

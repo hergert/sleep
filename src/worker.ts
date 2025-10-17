@@ -16,9 +16,19 @@ import { Readable } from 'node:stream';
 const sleepProvider = new SleepAuthProvider();
 
 // Create transport once
+let sessionInitialized = false;
+
 const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => crypto.randomUUID(),
+  sessionIdGenerator: () => {
+    return crypto.randomUUID();
+  },
   enableJsonResponse: true,
+  onsessioninitialized: (sessionId) => {
+    sessionInitialized = true;
+  },
+  onsessionclosed: () => {
+    sessionInitialized = false;
+  },
 });
 
 // Connect server to transport
@@ -38,17 +48,17 @@ async function ensureAuthInitialized(env?: any) {
     console.log('[worker] Initializing auth (issuer changed from', lastIssuer, 'to', currentIssuer, ')');
 
     if (env) {
-      // Initialize KV storage if bindings are available, otherwise use in-memory
-      initializeStorage(env.OAUTH_STATE_KV, env.OAUTH_CLIENTS_KV);
-      initializeCredentialStorage(env.CREDENTIALS_KV);
-
       // In Workers, secrets are in env, not process.env
-      // Copy secrets to process.env so loadAuthConfig can read them
+      // Copy secrets to process.env FIRST so initialization functions can read them
       if (env.AUTH_ISSUER) process.env.AUTH_ISSUER = env.AUTH_ISSUER;
       if (env.AUTH_JWT_SECRET) process.env.AUTH_JWT_SECRET = env.AUTH_JWT_SECRET;
       if (env.AUTH_ENCRYPTION_KEY) process.env.AUTH_ENCRYPTION_KEY = env.AUTH_ENCRYPTION_KEY;
       if (env.AUTH_SESSION_SECRET) process.env.AUTH_SESSION_SECRET = env.AUTH_SESSION_SECRET;
       if (env.AUTH_CLIENTS_JSON) process.env.AUTH_CLIENTS_JSON = env.AUTH_CLIENTS_JSON;
+
+      // Initialize KV storage if bindings are available, otherwise use in-memory
+      initializeStorage(env.OAUTH_STATE_KV, env.OAUTH_CLIENTS_KV);
+      initializeCredentialStorage(env.CREDENTIALS_KV);
     }
 
     authConfig = loadAuthConfig(443, sleepProvider.defaultScopes);
@@ -179,7 +189,7 @@ export default {
       // Handle CORS preflight
       if (request.method === 'OPTIONS') {
         return new Response(null, {
-          status: 204,
+          status: 200,
           headers: corsHeaders,
         });
       }
@@ -214,10 +224,11 @@ export default {
 
       // MCP endpoints require authentication
       if (url.pathname.startsWith('/mcp')) {
+        const sessionIdHeader = request.headers.get('mcp-session-id');
+
         if (request.method === 'GET' || request.method === 'HEAD') {
-          // Streamable HTTP clients poll GET for notifications. We don't send
-          // server-initiated events yet, so acknowledge with no content.
-          return new Response(null, { status: 204, headers: corsHeaders });
+          // Streamable HTTP clients poll GET for notifications. Respond 200 with CORS headers.
+          return new Response(null, { status: 200, headers: corsHeaders });
         }
 
         const authHeader = request.headers.get('authorization');
@@ -245,6 +256,10 @@ export default {
             expiresAt: verified.expiresAt,
             extra: { subject: verified.subject },
           };
+
+          // Log session ID from request
+          const sessionId = request.headers.get('mcp-session-id');
+          console.log('[worker] MCP request - Session ID:', sessionId, 'Bootstrapped:', bootstrapped);
         } catch (error) {
           return new Response(
             JSON.stringify({
@@ -256,6 +271,27 @@ export default {
               headers: {
                 'Content-Type': 'application/json',
                 'WWW-Authenticate': 'Bearer error="invalid_token"',
+                ...corsHeaders,
+              },
+            }
+          );
+        }
+
+        if (!sessionInitialized && sessionIdHeader) {
+          console.log('[worker] Request with MCP session before initialization; signaling client to retry handshake.');
+          return new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: {
+                code: -32001,
+                message: 'Session not found',
+              },
+              id: null,
+            }),
+            {
+              status: 404,
+              headers: {
+                'Content-Type': 'application/json',
                 ...corsHeaders,
               },
             }
